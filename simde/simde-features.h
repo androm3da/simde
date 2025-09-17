@@ -35,6 +35,12 @@
 #include "simde-arch.h"
 #include "simde-diagnostic.h"
 
+#if !defined(SIMDE_HEXAGON_HVX_NATIVE) && !defined(SIMDE_HEXAGON_HVX_NO_NATIVE) && !defined(SIMDE_NO_NATIVE)
+  #if defined(SIMDE_ARCH_HEXAGON_HVX)
+    #define SIMDE_HEXAGON_HVX_NATIVE
+  #endif
+#endif
+
 #if !defined(SIMDE_X86_SVML_NATIVE) && !defined(SIMDE_X86_SVML_NO_NATIVE) && !defined(SIMDE_NO_NATIVE)
   #if defined(SIMDE_ARCH_X86_SVML)
     #define SIMDE_X86_SVML_NATIVE

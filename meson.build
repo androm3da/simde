@@ -450,6 +450,37 @@ simde_msa_families = [
   'subv',
 ]
 
+simde_hexagon_hvx_families = [
+  'abs',
+  'absdiff',
+  'add',
+  'and',
+  'avg',
+  'blend',
+  'cmp',
+  'cvt',
+  'dmpy',
+  'dup',
+  'extract',
+  'load',
+  'lut',
+  'min_max',
+  'mul',
+  'neg',
+  'norm',
+  'or',
+  'pack',
+  'popcount',
+  'qadd',
+  'ror',
+  'round',
+  'shift',
+  'shuffle',
+  'store',
+  'sub',
+  'xor',
+]
+
 if not meson.is_subproject() and get_option('tests')
   subdir('test')
 endif
@@ -472,6 +503,11 @@ endforeach
 simde_msa_family_headers = ['simde/mips/msa/types.h']
 foreach msa_family : simde_msa_families
   simde_msa_family_headers += 'simde/mips/msa/' + msa_family + '.h'
+endforeach
+
+simde_hexagon_hvx_family_headers = ['simde/hexagon/types.h']
+foreach hexagon_hvx_family : simde_hexagon_hvx_families
+  simde_hexagon_hvx_family_headers += 'simde/hexagon/hvx/' + hexagon_hvx_family + '.h'
 endforeach
 
 if not meson.is_subproject()

@@ -1281,6 +1281,18 @@ simde_math_fpclass(double v, const int imm8) {
       return rounded;
     }
     #define simde_math_roundeven simde_math_roundeven
+  #else
+    static HEDLEY_INLINE
+    double
+    simde_math_roundeven(double v) {
+      double rounded = round(v);
+      double diff = rounded - v;
+      if ((fabs(diff) == 0.5) && (((int64_t) rounded) & 1)) {
+        rounded = v - diff;
+      }
+      return rounded;
+    }
+    #define simde_math_roundeven simde_math_roundeven
   #endif
 #endif
 
@@ -1296,6 +1308,18 @@ simde_math_fpclass(double v, const int imm8) {
       float rounded = simde_math_roundf(v);
       float diff = rounded - v;
       if (HEDLEY_UNLIKELY(simde_math_fabsf(diff) == 0.5f) && (HEDLEY_STATIC_CAST(int32_t, rounded) & 1)) {
+        rounded = v - diff;
+      }
+      return rounded;
+    }
+    #define simde_math_roundevenf simde_math_roundevenf
+  #else
+    static HEDLEY_INLINE
+    float
+    simde_math_roundevenf(float v) {
+      float rounded = roundf(v);
+      float diff = rounded - v;
+      if ((fabsf(diff) == 0.5f) && (((int32_t) rounded) & 1)) {
         rounded = v - diff;
       }
       return rounded;

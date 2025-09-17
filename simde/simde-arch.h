@@ -221,6 +221,33 @@
 #  define SIMDE_ARCH_H8300
 #endif
 
+/* Hexagon
+   <https://en.wikipedia.org/wiki/Qualcomm_Hexagon> */
+#if defined(__hexagon__) || defined(__HEXAGON__)
+#  if defined(__HEXAGON_V__) || defined(__HEXAGON_ARCH__)
+#    define SIMDE_ARCH_HEXAGON __HEXAGON_ARCH__
+#  else
+#    define SIMDE_ARCH_HEXAGON 1
+#  endif
+#endif
+#if defined(SIMDE_ARCH_HEXAGON)
+#  define SIMDE_ARCH_HEXAGON_CHECK(version) ((version) <= SIMDE_ARCH_HEXAGON)
+#else
+#  define SIMDE_ARCH_HEXAGON_CHECK(version) (0)
+#endif
+
+/* Hexagon HVX (Hexagon Vector eXtensions) */
+#if defined(__HVX__) || defined(__HEXAGON_HVX__)
+#  define SIMDE_ARCH_HEXAGON_HVX 1
+#  if defined(__HVX_LENGTH__) && __HVX_LENGTH__ == 128
+#    define SIMDE_ARCH_HEXAGON_HVX_LENGTH 1024
+#  elif defined(__HVX_LENGTH__) && __HVX_LENGTH__ == 64
+#    define SIMDE_ARCH_HEXAGON_HVX_LENGTH 512
+#  else
+#    define SIMDE_ARCH_HEXAGON_HVX_LENGTH 1024
+#  endif
+#endif
+
 /* Elbrus (8S, 8SV and successors)
    <https://en.wikipedia.org/wiki/Elbrus-8S> */
 #if defined(__e2k__)
