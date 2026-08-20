@@ -3,6 +3,8 @@ fs = import('fs')
 simde_test_hexagon_hvx_simd_tests = simde_hvx_families + ['types']
 
 simde_test_hexagon_hvx_qemu_broken = []
+# QEMU cannot decode the floating-point comparison instructions.
+simde_test_hexagon_hvx_qemu_broken += ['vcmp']
 simde_test_hexagon_hvx_on_qemu = (host_machine.cpu_family() == 'hexagon')
 
 simde_test_hexagon_hvx_simd_sources = []
