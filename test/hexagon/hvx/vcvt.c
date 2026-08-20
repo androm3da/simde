@@ -1,0 +1,1610 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
+ * Copyright:
+ *   Qualcomm Technologies, Inc. and/or its subsidiaries.
+ */
+
+#define SIMDE_TEST_HEXAGON_HVX_INSN vcvt
+
+#include <fenv.h>
+
+#include "test-hvx.h"
+#include "../../../simde/hexagon/hvx/vcvt.h"
+
+#define SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE 128
+#define SIMDE_TEST_HVX_FIXTURE_CHUNKS (SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE / SIMDE_HVX_VECTOR_SIZE)
+
+static simde_hvx_vector_t
+simde_test_hvx_fixture_vector_load(const void* ptr, size_t chunk) {
+  return simde_test_hvx_vector_load(
+    HEDLEY_REINTERPRET_CAST(const uint8_t*, ptr) + (chunk * SIMDE_HVX_VECTOR_SIZE));
+}
+
+static simde_hvx_vector_t
+simde_test_hvx_fixture_packed_load(const void* ptr, size_t chunk) {
+  simde_hvx_vector_t r;
+  uint8_t* r_ = HEDLEY_REINTERPRET_CAST(uint8_t*, &r);
+  const uint8_t* ptr_ = HEDLEY_REINTERPRET_CAST(const uint8_t*, ptr);
+  const size_t half = SIMDE_HVX_VECTOR_SIZE / 2;
+
+  simde_memcpy(r_, ptr_ + (chunk * half), half);
+  simde_memcpy(r_ + half,
+               ptr_ + (SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE / 2) + (chunk * half), half);
+  return r;
+}
+
+static simde_hvx_vector_t
+simde_test_hvx_fixture_pair_vector_load(const void* lo, const void* hi, size_t chunk, size_t part) {
+  const size_t offset = (chunk * SIMDE_HVX_PAIR_SIZE) + (part * SIMDE_HVX_VECTOR_SIZE);
+  const uint8_t* ptr = offset < SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE
+    ? HEDLEY_REINTERPRET_CAST(const uint8_t*, lo) + offset
+    : HEDLEY_REINTERPRET_CAST(const uint8_t*, hi) + offset - SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE;
+  return simde_test_hvx_vector_load(ptr);
+}
+
+#define SIMDE_TEST_HVX_VECTOR_TEST(func) \
+  do { \
+    for (size_t i = 0 ; i < (sizeof(test_vec) / sizeof(test_vec[0])) ; i++) { \
+      for (size_t chunk = 0 ; chunk < SIMDE_TEST_HVX_FIXTURE_CHUNKS ; chunk++) { \
+        simde_hvx_vector_t a = simde_test_hvx_fixture_vector_load(test_vec[i].a, chunk); \
+        simde_hvx_vector_t r = func(a); \
+        simde_test_hvx_vector_u8_assert_equal(r, simde_test_hvx_fixture_vector_load(test_vec[i].r, chunk)); \
+      } \
+    } \
+  } while (0)
+
+#define SIMDE_TEST_HVX_PACKED_TEST(func) \
+  do { \
+    for (size_t i = 0 ; i < (sizeof(test_vec) / sizeof(test_vec[0])) ; i++) { \
+      for (size_t chunk = 0 ; chunk < SIMDE_TEST_HVX_FIXTURE_CHUNKS ; chunk++) { \
+        simde_hvx_vector_t a = simde_test_hvx_fixture_vector_load(test_vec[i].a, chunk); \
+        simde_hvx_vector_t b = simde_test_hvx_fixture_vector_load(test_vec[i].b, chunk); \
+        simde_hvx_vector_t r = func(a, b); \
+        simde_test_hvx_vector_u8_assert_equal(r, simde_test_hvx_fixture_packed_load(test_vec[i].r, chunk)); \
+      } \
+    } \
+  } while (0)
+
+#define SIMDE_TEST_HVX_PAIR_TEST(func) \
+  do { \
+    for (size_t i = 0 ; i < (sizeof(test_vec) / sizeof(test_vec[0])) ; i++) { \
+      for (size_t chunk = 0 ; chunk < SIMDE_TEST_HVX_FIXTURE_CHUNKS ; chunk++) { \
+        simde_hvx_vector_t a = simde_test_hvx_fixture_vector_load(test_vec[i].a, chunk); \
+        simde_hvx_vectorpair_t pair = func(a); \
+        simde_test_hvx_vector_u8_assert_equal(simde_Q6_V_lo_W(pair), simde_test_hvx_fixture_pair_vector_load(test_vec[i].r_lo, test_vec[i].r_hi, chunk, 0)); \
+        simde_test_hvx_vector_u8_assert_equal(simde_Q6_V_hi_W(pair), simde_test_hvx_fixture_pair_vector_load(test_vec[i].r_lo, test_vec[i].r_hi, chunk, 1)); \
+      } \
+    } \
+  } while (0)
+
+
+static int
+test_simde_vcvt_Vhf_vcvt_Vh(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(127),
+      UINT8_C(0), UINT8_C(128), UINT8_C(100), UINT8_C(0), UINT8_C(156), UINT8_C(255), UINT8_C(57), UINT8_C(48),
+      UINT8_C(199), UINT8_C(207), UINT8_C(2), UINT8_C(0), UINT8_C(254), UINT8_C(255), UINT8_C(232), UINT8_C(3),
+      UINT8_C(24), UINT8_C(252), UINT8_C(7), UINT8_C(0), UINT8_C(249), UINT8_C(255), UINT8_C(255), UINT8_C(0),
+      UINT8_C(1), UINT8_C(255), UINT8_C(0), UINT8_C(125), UINT8_C(0), UINT8_C(131), UINT8_C(3), UINT8_C(0),
+      UINT8_C(253), UINT8_C(255), UINT8_C(244), UINT8_C(1), UINT8_C(12), UINT8_C(254), UINT8_C(42), UINT8_C(0),
+      UINT8_C(214), UINT8_C(255), UINT8_C(4), UINT8_C(0), UINT8_C(252), UINT8_C(255), UINT8_C(64), UINT8_C(31),
+      UINT8_C(192), UINT8_C(224), UINT8_C(5), UINT8_C(0), UINT8_C(251), UINT8_C(255), UINT8_C(15), UINT8_C(39),
+      UINT8_C(241), UINT8_C(216), UINT8_C(6), UINT8_C(0), UINT8_C(250), UINT8_C(255), UINT8_C(111), UINT8_C(0),
+      UINT8_C(145), UINT8_C(255), UINT8_C(206), UINT8_C(86), UINT8_C(50), UINT8_C(169), UINT8_C(8), UINT8_C(0),
+      UINT8_C(248), UINT8_C(255), UINT8_C(77), UINT8_C(1), UINT8_C(179), UINT8_C(254), UINT8_C(9), UINT8_C(0),
+      UINT8_C(247), UINT8_C(255), UINT8_C(92), UINT8_C(17), UINT8_C(164), UINT8_C(238), UINT8_C(10), UINT8_C(0),
+      UINT8_C(246), UINT8_C(255), UINT8_C(43), UINT8_C(2), UINT8_C(213), UINT8_C(253), UINT8_C(11), UINT8_C(0),
+      UINT8_C(245), UINT8_C(255), UINT8_C(10), UINT8_C(26), UINT8_C(246), UINT8_C(229), UINT8_C(12), UINT8_C(0),
+      UINT8_C(244), UINT8_C(255), UINT8_C(9), UINT8_C(3), UINT8_C(247), UINT8_C(252), UINT8_C(13), UINT8_C(0),
+      UINT8_C(243), UINT8_C(255), UINT8_C(184), UINT8_C(34), UINT8_C(72), UINT8_C(221), UINT8_C(14), UINT8_C(0)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(0), UINT8_C(120),
+      UINT8_C(0), UINT8_C(248), UINT8_C(64), UINT8_C(86), UINT8_C(64), UINT8_C(214), UINT8_C(7), UINT8_C(114),
+      UINT8_C(7), UINT8_C(242), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192), UINT8_C(208), UINT8_C(99),
+      UINT8_C(208), UINT8_C(227), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(248), UINT8_C(91),
+      UINT8_C(248), UINT8_C(219), UINT8_C(208), UINT8_C(119), UINT8_C(208), UINT8_C(247), UINT8_C(0), UINT8_C(66),
+      UINT8_C(0), UINT8_C(194), UINT8_C(208), UINT8_C(95), UINT8_C(208), UINT8_C(223), UINT8_C(64), UINT8_C(81),
+      UINT8_C(64), UINT8_C(209), UINT8_C(0), UINT8_C(68), UINT8_C(0), UINT8_C(196), UINT8_C(208), UINT8_C(111),
+      UINT8_C(208), UINT8_C(239), UINT8_C(0), UINT8_C(69), UINT8_C(0), UINT8_C(197), UINT8_C(226), UINT8_C(112),
+      UINT8_C(226), UINT8_C(240), UINT8_C(0), UINT8_C(70), UINT8_C(0), UINT8_C(198), UINT8_C(240), UINT8_C(86),
+      UINT8_C(240), UINT8_C(214), UINT8_C(109), UINT8_C(117), UINT8_C(109), UINT8_C(245), UINT8_C(0), UINT8_C(72),
+      UINT8_C(0), UINT8_C(200), UINT8_C(52), UINT8_C(93), UINT8_C(52), UINT8_C(221), UINT8_C(128), UINT8_C(72),
+      UINT8_C(128), UINT8_C(200), UINT8_C(87), UINT8_C(108), UINT8_C(87), UINT8_C(236), UINT8_C(0), UINT8_C(73),
+      UINT8_C(0), UINT8_C(201), UINT8_C(86), UINT8_C(96), UINT8_C(86), UINT8_C(224), UINT8_C(128), UINT8_C(73),
+      UINT8_C(128), UINT8_C(201), UINT8_C(130), UINT8_C(110), UINT8_C(130), UINT8_C(238), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(18), UINT8_C(98), UINT8_C(18), UINT8_C(226), UINT8_C(128), UINT8_C(74),
+      UINT8_C(128), UINT8_C(202), UINT8_C(87), UINT8_C(112), UINT8_C(87), UINT8_C(240), UINT8_C(0), UINT8_C(75)
+      } },
+  };
+
+  SIMDE_TEST_HVX_VECTOR_TEST(simde_Q6_Vhf_vcvt_Vh);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vhf_vcvt_Vuh(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(100), UINT8_C(0),
+      UINT8_C(57), UINT8_C(48), UINT8_C(2), UINT8_C(0), UINT8_C(232), UINT8_C(3), UINT8_C(7), UINT8_C(0),
+      UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(125), UINT8_C(3), UINT8_C(0), UINT8_C(244), UINT8_C(1),
+      UINT8_C(42), UINT8_C(0), UINT8_C(4), UINT8_C(0), UINT8_C(64), UINT8_C(31), UINT8_C(5), UINT8_C(0),
+      UINT8_C(15), UINT8_C(39), UINT8_C(6), UINT8_C(0), UINT8_C(111), UINT8_C(0), UINT8_C(206), UINT8_C(86),
+      UINT8_C(8), UINT8_C(0), UINT8_C(77), UINT8_C(1), UINT8_C(9), UINT8_C(0), UINT8_C(92), UINT8_C(17),
+      UINT8_C(10), UINT8_C(0), UINT8_C(43), UINT8_C(2), UINT8_C(11), UINT8_C(0), UINT8_C(10), UINT8_C(26),
+      UINT8_C(12), UINT8_C(0), UINT8_C(9), UINT8_C(3), UINT8_C(13), UINT8_C(0), UINT8_C(184), UINT8_C(34),
+      UINT8_C(14), UINT8_C(0), UINT8_C(231), UINT8_C(3), UINT8_C(15), UINT8_C(0), UINT8_C(179), UINT8_C(21),
+      UINT8_C(16), UINT8_C(0), UINT8_C(234), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(133), UINT8_C(26),
+      UINT8_C(18), UINT8_C(0), UINT8_C(89), UINT8_C(1), UINT8_C(19), UINT8_C(0), UINT8_C(210), UINT8_C(30),
+      UINT8_C(20), UINT8_C(0), UINT8_C(200), UINT8_C(1), UINT8_C(21), UINT8_C(0), UINT8_C(197), UINT8_C(34),
+      UINT8_C(22), UINT8_C(0), UINT8_C(55), UINT8_C(2), UINT8_C(23), UINT8_C(0), UINT8_C(52), UINT8_C(35),
+      UINT8_C(24), UINT8_C(0), UINT8_C(166), UINT8_C(2), UINT8_C(25), UINT8_C(0), UINT8_C(123), UINT8_C(0),
+      UINT8_C(26), UINT8_C(0), UINT8_C(21), UINT8_C(3), UINT8_C(27), UINT8_C(0), UINT8_C(234), UINT8_C(0),
+      UINT8_C(28), UINT8_C(0), UINT8_C(122), UINT8_C(3), UINT8_C(29), UINT8_C(0), UINT8_C(89), UINT8_C(1)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(124), UINT8_C(64), UINT8_C(86),
+      UINT8_C(7), UINT8_C(114), UINT8_C(0), UINT8_C(64), UINT8_C(208), UINT8_C(99), UINT8_C(0), UINT8_C(71),
+      UINT8_C(248), UINT8_C(91), UINT8_C(208), UINT8_C(119), UINT8_C(0), UINT8_C(66), UINT8_C(208), UINT8_C(95),
+      UINT8_C(64), UINT8_C(81), UINT8_C(0), UINT8_C(68), UINT8_C(208), UINT8_C(111), UINT8_C(0), UINT8_C(69),
+      UINT8_C(226), UINT8_C(112), UINT8_C(0), UINT8_C(70), UINT8_C(240), UINT8_C(86), UINT8_C(109), UINT8_C(117),
+      UINT8_C(0), UINT8_C(72), UINT8_C(52), UINT8_C(93), UINT8_C(128), UINT8_C(72), UINT8_C(87), UINT8_C(108),
+      UINT8_C(0), UINT8_C(73), UINT8_C(86), UINT8_C(96), UINT8_C(128), UINT8_C(73), UINT8_C(130), UINT8_C(110),
+      UINT8_C(0), UINT8_C(74), UINT8_C(18), UINT8_C(98), UINT8_C(128), UINT8_C(74), UINT8_C(87), UINT8_C(112),
+      UINT8_C(0), UINT8_C(75), UINT8_C(206), UINT8_C(99), UINT8_C(128), UINT8_C(75), UINT8_C(109), UINT8_C(109),
+      UINT8_C(0), UINT8_C(76), UINT8_C(80), UINT8_C(91), UINT8_C(64), UINT8_C(76), UINT8_C(161), UINT8_C(110),
+      UINT8_C(128), UINT8_C(76), UINT8_C(100), UINT8_C(93), UINT8_C(192), UINT8_C(76), UINT8_C(180), UINT8_C(111),
+      UINT8_C(0), UINT8_C(77), UINT8_C(32), UINT8_C(95), UINT8_C(64), UINT8_C(77), UINT8_C(89), UINT8_C(112),
+      UINT8_C(128), UINT8_C(77), UINT8_C(110), UINT8_C(96), UINT8_C(192), UINT8_C(77), UINT8_C(102), UINT8_C(112),
+      UINT8_C(0), UINT8_C(78), UINT8_C(76), UINT8_C(97), UINT8_C(64), UINT8_C(78), UINT8_C(176), UINT8_C(87),
+      UINT8_C(128), UINT8_C(78), UINT8_C(42), UINT8_C(98), UINT8_C(192), UINT8_C(78), UINT8_C(80), UINT8_C(91),
+      UINT8_C(0), UINT8_C(79), UINT8_C(244), UINT8_C(98), UINT8_C(64), UINT8_C(79), UINT8_C(100), UINT8_C(93)
+      } },
+  };
+
+  SIMDE_TEST_HVX_VECTOR_TEST(simde_Q6_Vhf_vcvt_Vuh);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vh_vcvt_Vhf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(3),
+      UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87),
+      UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185),
+      UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16), UINT8_C(85), UINT8_C(53),
+      UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250), UINT8_C(128), UINT8_C(124),
+      UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(5),
+      UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208),
+      UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(96),
+      UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108), UINT8_C(0), UINT8_C(107)
+      },
+      {
+      UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(3), UINT8_C(0), UINT8_C(253), UINT8_C(255),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(128),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(10), UINT8_C(0), UINT8_C(246), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(123), UINT8_C(0),
+      UINT8_C(133), UINT8_C(255), UINT8_C(1), UINT8_C(0), UINT8_C(2), UINT8_C(0), UINT8_C(254), UINT8_C(255),
+      UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(8), UINT8_C(0), UINT8_C(248), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(7), UINT8_C(0), UINT8_C(249), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(12), UINT8_C(0),
+      UINT8_C(244), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(0), UINT8_C(224), UINT8_C(255),
+      UINT8_C(1), UINT8_C(0), UINT8_C(2), UINT8_C(0), UINT8_C(254), UINT8_C(255), UINT8_C(1), UINT8_C(0),
+      UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(2),
+      UINT8_C(0), UINT8_C(254), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(16), UINT8_C(0), UINT8_C(14)
+      } },
+  };
+  SIMDE_TEST_HVX_VECTOR_TEST(simde_Q6_Vh_vcvt_Vhf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vuh_vcvt_Vhf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(3),
+      UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87),
+      UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185),
+      UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16), UINT8_C(85), UINT8_C(53),
+      UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250), UINT8_C(128), UINT8_C(124),
+      UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(5),
+      UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208),
+      UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(96),
+      UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108), UINT8_C(0), UINT8_C(107)
+      },
+      {
+      UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(3), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(224), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(10), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(123), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(2), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(8), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(7), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(224), UINT8_C(223), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(12), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(1), UINT8_C(0), UINT8_C(2), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(1), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(2),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(16), UINT8_C(0), UINT8_C(14)
+      } },
+  };
+  SIMDE_TEST_HVX_VECTOR_TEST(simde_Q6_Vuh_vcvt_Vhf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vsf_equals_Vw(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(127),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(100), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(156), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(64), UINT8_C(226), UINT8_C(1), UINT8_C(0),
+      UINT8_C(192), UINT8_C(29), UINT8_C(254), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(254), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(64), UINT8_C(66), UINT8_C(15), UINT8_C(0),
+      UINT8_C(192), UINT8_C(189), UINT8_C(240), UINT8_C(255), UINT8_C(7), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(249), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(212), UINT8_C(48), UINT8_C(0),
+      UINT8_C(0), UINT8_C(44), UINT8_C(207), UINT8_C(255), UINT8_C(3), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(253), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(32), UINT8_C(161), UINT8_C(7), UINT8_C(0),
+      UINT8_C(224), UINT8_C(94), UINT8_C(248), UINT8_C(255), UINT8_C(42), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(214), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(4), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(252), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(18), UINT8_C(122), UINT8_C(0),
+      UINT8_C(0), UINT8_C(238), UINT8_C(133), UINT8_C(255), UINT8_C(5), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(251), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(63), UINT8_C(66), UINT8_C(15), UINT8_C(0)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(191), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(79),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(207), UINT8_C(0), UINT8_C(0), UINT8_C(200), UINT8_C(66),
+      UINT8_C(0), UINT8_C(0), UINT8_C(200), UINT8_C(194), UINT8_C(0), UINT8_C(32), UINT8_C(241), UINT8_C(71),
+      UINT8_C(0), UINT8_C(32), UINT8_C(241), UINT8_C(199), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(36), UINT8_C(116), UINT8_C(73),
+      UINT8_C(0), UINT8_C(36), UINT8_C(116), UINT8_C(201), UINT8_C(0), UINT8_C(0), UINT8_C(224), UINT8_C(64),
+      UINT8_C(0), UINT8_C(0), UINT8_C(224), UINT8_C(192), UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(71),
+      UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(199), UINT8_C(0), UINT8_C(80), UINT8_C(67), UINT8_C(74),
+      UINT8_C(0), UINT8_C(80), UINT8_C(67), UINT8_C(202), UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(64),
+      UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(192), UINT8_C(0), UINT8_C(36), UINT8_C(244), UINT8_C(72),
+      UINT8_C(0), UINT8_C(36), UINT8_C(244), UINT8_C(200), UINT8_C(0), UINT8_C(0), UINT8_C(40), UINT8_C(66),
+      UINT8_C(0), UINT8_C(0), UINT8_C(40), UINT8_C(194), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(64),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(192), UINT8_C(0), UINT8_C(36), UINT8_C(244), UINT8_C(74),
+      UINT8_C(0), UINT8_C(36), UINT8_C(244), UINT8_C(202), UINT8_C(0), UINT8_C(0), UINT8_C(160), UINT8_C(64),
+      UINT8_C(0), UINT8_C(0), UINT8_C(160), UINT8_C(192), UINT8_C(240), UINT8_C(35), UINT8_C(116), UINT8_C(73)
+      } },
+  };
+  SIMDE_TEST_HVX_VECTOR_TEST(simde_Q6_Vsf_equals_Vw);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vw_equals_Vsf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(191),
+      UINT8_C(219), UINT8_C(15), UINT8_C(73), UINT8_C(64), UINT8_C(219), UINT8_C(15), UINT8_C(73), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(255),
+      UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(75),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(203), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(79),
+      UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(207), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0),
+      UINT8_C(255), UINT8_C(255), UINT8_C(127), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(65),
+      UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(193), UINT8_C(205), UINT8_C(204), UINT8_C(204), UINT8_C(61),
+      UINT8_C(121), UINT8_C(233), UINT8_C(246), UINT8_C(66), UINT8_C(121), UINT8_C(233), UINT8_C(246), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(191), UINT8_C(51), UINT8_C(51), UINT8_C(51), UINT8_C(63),
+      UINT8_C(51), UINT8_C(51), UINT8_C(51), UINT8_C(191), UINT8_C(0), UINT8_C(64), UINT8_C(28), UINT8_C(70),
+      UINT8_C(0), UINT8_C(64), UINT8_C(28), UINT8_C(198), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(52)
+      },
+      {
+      UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(255),
+      UINT8_C(3), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(253), UINT8_C(255), UINT8_C(255), UINT8_C(255),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(127),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(10), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(246), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(123), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(133), UINT8_C(255), UINT8_C(255), UINT8_C(255),
+      UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(2), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(254), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(16), UINT8_C(39), UINT8_C(0), UINT8_C(0),
+      UINT8_C(240), UINT8_C(216), UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0)
+      } },
+  };
+  SIMDE_TEST_HVX_VECTOR_TEST(simde_Q6_Vw_equals_Vsf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vh_equals_Vhf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(3),
+      UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87),
+      UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185),
+      UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16), UINT8_C(85), UINT8_C(53),
+      UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250), UINT8_C(128), UINT8_C(124),
+      UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(5),
+      UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208),
+      UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(96),
+      UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108), UINT8_C(0), UINT8_C(107)
+      },
+      {
+      UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(3), UINT8_C(0), UINT8_C(253), UINT8_C(255),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(128),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(10), UINT8_C(0), UINT8_C(246), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(123), UINT8_C(0),
+      UINT8_C(133), UINT8_C(255), UINT8_C(1), UINT8_C(0), UINT8_C(2), UINT8_C(0), UINT8_C(254), UINT8_C(255),
+      UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(8), UINT8_C(0), UINT8_C(248), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(7), UINT8_C(0), UINT8_C(249), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(12), UINT8_C(0),
+      UINT8_C(244), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(0), UINT8_C(224), UINT8_C(255),
+      UINT8_C(1), UINT8_C(0), UINT8_C(2), UINT8_C(0), UINT8_C(254), UINT8_C(255), UINT8_C(1), UINT8_C(0),
+      UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(2),
+      UINT8_C(0), UINT8_C(254), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(16), UINT8_C(0), UINT8_C(14)
+      } },
+  };
+  SIMDE_TEST_HVX_VECTOR_TEST(simde_Q6_Vh_equals_Vhf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vh_equals_Vhf_rnd(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(3),
+      UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87),
+      UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185),
+      UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16), UINT8_C(85), UINT8_C(53),
+      UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250), UINT8_C(128), UINT8_C(124),
+      UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(5),
+      UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208),
+      UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(96),
+      UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108), UINT8_C(0), UINT8_C(107)
+      },
+      {
+      UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(3), UINT8_C(0), UINT8_C(253), UINT8_C(255),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(128),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(10), UINT8_C(0), UINT8_C(246), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(123), UINT8_C(0),
+      UINT8_C(133), UINT8_C(255), UINT8_C(1), UINT8_C(0), UINT8_C(2), UINT8_C(0), UINT8_C(254), UINT8_C(255),
+      UINT8_C(2), UINT8_C(0), UINT8_C(254), UINT8_C(255), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255),
+      UINT8_C(0), UINT8_C(8), UINT8_C(0), UINT8_C(248), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(7), UINT8_C(0), UINT8_C(249), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(127), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(255), UINT8_C(127), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(12), UINT8_C(0),
+      UINT8_C(244), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(0), UINT8_C(224), UINT8_C(255),
+      UINT8_C(1), UINT8_C(0), UINT8_C(2), UINT8_C(0), UINT8_C(254), UINT8_C(255), UINT8_C(2), UINT8_C(0),
+      UINT8_C(254), UINT8_C(255), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(0), UINT8_C(2),
+      UINT8_C(0), UINT8_C(254), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(16), UINT8_C(0), UINT8_C(14)
+      } },
+  };
+
+  SIMDE_TEST_HVX_VECTOR_TEST(simde_Q6_Vh_equals_Vhf_rnd);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vh_equals_Vhf_rnd_modes(SIMDE_MUNIT_TEST_ARGS) {
+  static const simde_float32 values[] = {
+    SIMDE_FLOAT32_C(0.5), SIMDE_FLOAT32_C(1.5),
+    SIMDE_FLOAT32_C(-0.5), SIMDE_FLOAT32_C(-1.5)
+  };
+  simde_hvx_vector_private a_, nearest_, downward_;
+  int old_round = fegetround();
+
+  for (size_t i = 0 ; i < SIMDE_HVX_VECTOR_F16_COUNT ; i++) {
+    a_.f16[i] = simde_float16_from_float32(values[i % 4]);
+  }
+  if (fesetround(FE_TONEAREST) != 0) return 1;
+  nearest_ = simde_hvx_vector_to_private(
+    simde_Q6_Vh_equals_Vhf_rnd(simde_hvx_vector_from_private(a_)));
+  if (fesetround(FE_DOWNWARD) != 0) {
+    fesetround(old_round);
+    return 1;
+  }
+  downward_ = simde_hvx_vector_to_private(
+    simde_Q6_Vh_equals_Vhf_rnd(simde_hvx_vector_from_private(a_)));
+  if (fesetround(old_round) != 0) return 1;
+
+  simde_assert_equal_i16(nearest_.i16[0], INT16_C(0));
+  simde_assert_equal_i16(nearest_.i16[1], INT16_C(2));
+  simde_assert_equal_i16(nearest_.i16[2], INT16_C(0));
+  simde_assert_equal_i16(nearest_.i16[3], -INT16_C(2));
+  simde_assert_equal_i16(downward_.i16[0], INT16_C(0));
+  simde_assert_equal_i16(downward_.i16[1], INT16_C(1));
+  simde_assert_equal_i16(downward_.i16[2], -INT16_C(1));
+  simde_assert_equal_i16(downward_.i16[3], -INT16_C(2));
+
+  return 0;
+}
+
+static int
+test_simde_vcvt_Vhf_equals_Vh(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(255), UINT8_C(127),
+      UINT8_C(0), UINT8_C(128), UINT8_C(100), UINT8_C(0), UINT8_C(156), UINT8_C(255), UINT8_C(57), UINT8_C(48),
+      UINT8_C(199), UINT8_C(207), UINT8_C(2), UINT8_C(0), UINT8_C(254), UINT8_C(255), UINT8_C(232), UINT8_C(3),
+      UINT8_C(24), UINT8_C(252), UINT8_C(7), UINT8_C(0), UINT8_C(249), UINT8_C(255), UINT8_C(255), UINT8_C(0),
+      UINT8_C(1), UINT8_C(255), UINT8_C(0), UINT8_C(125), UINT8_C(0), UINT8_C(131), UINT8_C(3), UINT8_C(0),
+      UINT8_C(253), UINT8_C(255), UINT8_C(244), UINT8_C(1), UINT8_C(12), UINT8_C(254), UINT8_C(42), UINT8_C(0),
+      UINT8_C(214), UINT8_C(255), UINT8_C(4), UINT8_C(0), UINT8_C(252), UINT8_C(255), UINT8_C(64), UINT8_C(31),
+      UINT8_C(192), UINT8_C(224), UINT8_C(5), UINT8_C(0), UINT8_C(251), UINT8_C(255), UINT8_C(15), UINT8_C(39),
+      UINT8_C(241), UINT8_C(216), UINT8_C(6), UINT8_C(0), UINT8_C(250), UINT8_C(255), UINT8_C(111), UINT8_C(0),
+      UINT8_C(145), UINT8_C(255), UINT8_C(206), UINT8_C(86), UINT8_C(50), UINT8_C(169), UINT8_C(8), UINT8_C(0),
+      UINT8_C(248), UINT8_C(255), UINT8_C(77), UINT8_C(1), UINT8_C(179), UINT8_C(254), UINT8_C(9), UINT8_C(0),
+      UINT8_C(247), UINT8_C(255), UINT8_C(92), UINT8_C(17), UINT8_C(164), UINT8_C(238), UINT8_C(10), UINT8_C(0),
+      UINT8_C(246), UINT8_C(255), UINT8_C(43), UINT8_C(2), UINT8_C(213), UINT8_C(253), UINT8_C(11), UINT8_C(0),
+      UINT8_C(245), UINT8_C(255), UINT8_C(10), UINT8_C(26), UINT8_C(246), UINT8_C(229), UINT8_C(12), UINT8_C(0),
+      UINT8_C(244), UINT8_C(255), UINT8_C(9), UINT8_C(3), UINT8_C(247), UINT8_C(252), UINT8_C(13), UINT8_C(0),
+      UINT8_C(243), UINT8_C(255), UINT8_C(184), UINT8_C(34), UINT8_C(72), UINT8_C(221), UINT8_C(14), UINT8_C(0)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(0), UINT8_C(120),
+      UINT8_C(0), UINT8_C(248), UINT8_C(64), UINT8_C(86), UINT8_C(64), UINT8_C(214), UINT8_C(7), UINT8_C(114),
+      UINT8_C(7), UINT8_C(242), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192), UINT8_C(208), UINT8_C(99),
+      UINT8_C(208), UINT8_C(227), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(248), UINT8_C(91),
+      UINT8_C(248), UINT8_C(219), UINT8_C(208), UINT8_C(119), UINT8_C(208), UINT8_C(247), UINT8_C(0), UINT8_C(66),
+      UINT8_C(0), UINT8_C(194), UINT8_C(208), UINT8_C(95), UINT8_C(208), UINT8_C(223), UINT8_C(64), UINT8_C(81),
+      UINT8_C(64), UINT8_C(209), UINT8_C(0), UINT8_C(68), UINT8_C(0), UINT8_C(196), UINT8_C(208), UINT8_C(111),
+      UINT8_C(208), UINT8_C(239), UINT8_C(0), UINT8_C(69), UINT8_C(0), UINT8_C(197), UINT8_C(226), UINT8_C(112),
+      UINT8_C(226), UINT8_C(240), UINT8_C(0), UINT8_C(70), UINT8_C(0), UINT8_C(198), UINT8_C(240), UINT8_C(86),
+      UINT8_C(240), UINT8_C(214), UINT8_C(109), UINT8_C(117), UINT8_C(109), UINT8_C(245), UINT8_C(0), UINT8_C(72),
+      UINT8_C(0), UINT8_C(200), UINT8_C(52), UINT8_C(93), UINT8_C(52), UINT8_C(221), UINT8_C(128), UINT8_C(72),
+      UINT8_C(128), UINT8_C(200), UINT8_C(87), UINT8_C(108), UINT8_C(87), UINT8_C(236), UINT8_C(0), UINT8_C(73),
+      UINT8_C(0), UINT8_C(201), UINT8_C(86), UINT8_C(96), UINT8_C(86), UINT8_C(224), UINT8_C(128), UINT8_C(73),
+      UINT8_C(128), UINT8_C(201), UINT8_C(130), UINT8_C(110), UINT8_C(130), UINT8_C(238), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(18), UINT8_C(98), UINT8_C(18), UINT8_C(226), UINT8_C(128), UINT8_C(74),
+      UINT8_C(128), UINT8_C(202), UINT8_C(87), UINT8_C(112), UINT8_C(87), UINT8_C(240), UINT8_C(0), UINT8_C(75)
+      } },
+  };
+  SIMDE_TEST_HVX_VECTOR_TEST(simde_Q6_Vhf_equals_Vh);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vhf_vcvt_VsfVsf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t b[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(191),
+      UINT8_C(219), UINT8_C(15), UINT8_C(73), UINT8_C(64), UINT8_C(219), UINT8_C(15), UINT8_C(73), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(255),
+      UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(75),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(203), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(79),
+      UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(207), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0),
+      UINT8_C(255), UINT8_C(255), UINT8_C(127), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(65),
+      UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(193), UINT8_C(205), UINT8_C(204), UINT8_C(204), UINT8_C(61),
+      UINT8_C(121), UINT8_C(233), UINT8_C(246), UINT8_C(66), UINT8_C(121), UINT8_C(233), UINT8_C(246), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(191), UINT8_C(51), UINT8_C(51), UINT8_C(51), UINT8_C(63),
+      UINT8_C(51), UINT8_C(51), UINT8_C(51), UINT8_C(191), UINT8_C(0), UINT8_C(64), UINT8_C(28), UINT8_C(70),
+      UINT8_C(0), UINT8_C(64), UINT8_C(28), UINT8_C(198), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(52)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(127),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(75), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(203),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(79), UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(207),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(127), UINT8_C(127),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(191),
+      UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(65), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(193),
+      UINT8_C(205), UINT8_C(204), UINT8_C(204), UINT8_C(61), UINT8_C(121), UINT8_C(233), UINT8_C(246), UINT8_C(66),
+      UINT8_C(121), UINT8_C(233), UINT8_C(246), UINT8_C(194), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(191),
+      UINT8_C(51), UINT8_C(51), UINT8_C(51), UINT8_C(63), UINT8_C(51), UINT8_C(51), UINT8_C(51), UINT8_C(191),
+      UINT8_C(0), UINT8_C(64), UINT8_C(28), UINT8_C(70), UINT8_C(0), UINT8_C(64), UINT8_C(28), UINT8_C(198),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(52), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(191), UINT8_C(219), UINT8_C(15), UINT8_C(73), UINT8_C(64),
+      UINT8_C(219), UINT8_C(15), UINT8_C(73), UINT8_C(192), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(127)
+      },
+      {
+      UINT8_C(0), UINT8_C(252), UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(124),
+      UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184), UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201),
+      UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87), UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60),
+      UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190),
+      UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185), UINT8_C(226), UINT8_C(112), UINT8_C(226), UINT8_C(240),
+      UINT8_C(2), UINT8_C(0), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66),
+      UINT8_C(72), UINT8_C(194), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124),
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252), UINT8_C(0), UINT8_C(124),
+      UINT8_C(0), UINT8_C(252), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(56),
+      UINT8_C(0), UINT8_C(184), UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46),
+      UINT8_C(183), UINT8_C(87), UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57),
+      UINT8_C(154), UINT8_C(185), UINT8_C(226), UINT8_C(112), UINT8_C(226), UINT8_C(240), UINT8_C(2), UINT8_C(0)
+      } },
+  };
+
+  SIMDE_TEST_HVX_PACKED_TEST(simde_Q6_Vhf_vcvt_VsfVsf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vb_vcvt_VhfVhf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t b[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(3),
+      UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87),
+      UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185),
+      UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16), UINT8_C(85), UINT8_C(53),
+      UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250), UINT8_C(128), UINT8_C(124),
+      UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(5),
+      UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208),
+      UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(96),
+      UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108), UINT8_C(0), UINT8_C(107)
+      },
+      {
+      UINT8_C(255), UINT8_C(3), UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56),
+      UINT8_C(0), UINT8_C(184), UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46),
+      UINT8_C(183), UINT8_C(87), UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57),
+      UINT8_C(154), UINT8_C(185), UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16),
+      UINT8_C(85), UINT8_C(53), UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199),
+      UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250),
+      UINT8_C(128), UINT8_C(124), UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2),
+      UINT8_C(0), UINT8_C(5), UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185),
+      UINT8_C(0), UINT8_C(74), UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80),
+      UINT8_C(0), UINT8_C(208), UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193),
+      UINT8_C(0), UINT8_C(63), UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186),
+      UINT8_C(0), UINT8_C(96), UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108),
+      UINT8_C(0), UINT8_C(107), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66),
+      UINT8_C(72), UINT8_C(194), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124),
+      UINT8_C(0), UINT8_C(252), UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(10), UINT8_C(246), UINT8_C(0),
+      UINT8_C(123), UINT8_C(133), UINT8_C(1), UINT8_C(2), UINT8_C(254), UINT8_C(1), UINT8_C(255), UINT8_C(0),
+      UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(7), UINT8_C(249),
+      UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(12), UINT8_C(244), UINT8_C(0), UINT8_C(32),
+      UINT8_C(224), UINT8_C(1), UINT8_C(2), UINT8_C(254), UINT8_C(1), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(127), UINT8_C(127), UINT8_C(1), UINT8_C(255), UINT8_C(3),
+      UINT8_C(253), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(1), UINT8_C(255), UINT8_C(3), UINT8_C(253), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(0), UINT8_C(0),
+      UINT8_C(10), UINT8_C(246), UINT8_C(0), UINT8_C(123), UINT8_C(133), UINT8_C(1), UINT8_C(2), UINT8_C(254),
+      UINT8_C(1), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(7), UINT8_C(249), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(12),
+      UINT8_C(244), UINT8_C(0), UINT8_C(32), UINT8_C(224), UINT8_C(1), UINT8_C(2), UINT8_C(254), UINT8_C(1),
+      UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(127), UINT8_C(127)
+      } },
+  };
+
+  SIMDE_TEST_HVX_PACKED_TEST(simde_Q6_Vb_vcvt_VhfVhf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vub_vcvt_VhfVhf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t b[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(3),
+      UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87),
+      UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185),
+      UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16), UINT8_C(85), UINT8_C(53),
+      UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250), UINT8_C(128), UINT8_C(124),
+      UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(5),
+      UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208),
+      UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(96),
+      UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108), UINT8_C(0), UINT8_C(107)
+      },
+      {
+      UINT8_C(255), UINT8_C(3), UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56),
+      UINT8_C(0), UINT8_C(184), UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46),
+      UINT8_C(183), UINT8_C(87), UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57),
+      UINT8_C(154), UINT8_C(185), UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16),
+      UINT8_C(85), UINT8_C(53), UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199),
+      UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250),
+      UINT8_C(128), UINT8_C(124), UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2),
+      UINT8_C(0), UINT8_C(5), UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185),
+      UINT8_C(0), UINT8_C(74), UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80),
+      UINT8_C(0), UINT8_C(208), UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193),
+      UINT8_C(0), UINT8_C(63), UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186),
+      UINT8_C(0), UINT8_C(96), UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108),
+      UINT8_C(0), UINT8_C(107), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66),
+      UINT8_C(72), UINT8_C(194), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124),
+      UINT8_C(0), UINT8_C(252), UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(10), UINT8_C(0), UINT8_C(0),
+      UINT8_C(123), UINT8_C(0), UINT8_C(1), UINT8_C(2), UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(7), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(12), UINT8_C(0), UINT8_C(0), UINT8_C(32),
+      UINT8_C(0), UINT8_C(1), UINT8_C(2), UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(1), UINT8_C(0), UINT8_C(3),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(1), UINT8_C(0), UINT8_C(3), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(10), UINT8_C(0), UINT8_C(0), UINT8_C(123), UINT8_C(0), UINT8_C(1), UINT8_C(2), UINT8_C(0),
+      UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(7), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(12),
+      UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(0), UINT8_C(1), UINT8_C(2), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(255)
+      } },
+  };
+
+  SIMDE_TEST_HVX_PACKED_TEST(simde_Q6_Vub_vcvt_VhfVhf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vbf_vcvt_VsfVsf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t b[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(191),
+      UINT8_C(219), UINT8_C(15), UINT8_C(73), UINT8_C(64), UINT8_C(219), UINT8_C(15), UINT8_C(73), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(255),
+      UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(75),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(203), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(79),
+      UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(207), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0),
+      UINT8_C(255), UINT8_C(255), UINT8_C(127), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(65),
+      UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(193), UINT8_C(205), UINT8_C(204), UINT8_C(204), UINT8_C(61),
+      UINT8_C(121), UINT8_C(233), UINT8_C(246), UINT8_C(66), UINT8_C(121), UINT8_C(233), UINT8_C(246), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(191), UINT8_C(51), UINT8_C(51), UINT8_C(51), UINT8_C(63),
+      UINT8_C(51), UINT8_C(51), UINT8_C(51), UINT8_C(191), UINT8_C(0), UINT8_C(64), UINT8_C(28), UINT8_C(70),
+      UINT8_C(0), UINT8_C(64), UINT8_C(28), UINT8_C(198), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(52)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(127),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(75), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(203),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(79), UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(207),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(127), UINT8_C(127),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(191),
+      UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(65), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(193),
+      UINT8_C(205), UINT8_C(204), UINT8_C(204), UINT8_C(61), UINT8_C(121), UINT8_C(233), UINT8_C(246), UINT8_C(66),
+      UINT8_C(121), UINT8_C(233), UINT8_C(246), UINT8_C(194), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(191),
+      UINT8_C(51), UINT8_C(51), UINT8_C(51), UINT8_C(63), UINT8_C(51), UINT8_C(51), UINT8_C(51), UINT8_C(191),
+      UINT8_C(0), UINT8_C(64), UINT8_C(28), UINT8_C(70), UINT8_C(0), UINT8_C(64), UINT8_C(28), UINT8_C(198),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(52), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(191), UINT8_C(219), UINT8_C(15), UINT8_C(73), UINT8_C(64),
+      UINT8_C(219), UINT8_C(15), UINT8_C(73), UINT8_C(192), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(127)
+      },
+      {
+      UINT8_C(128), UINT8_C(255), UINT8_C(192), UINT8_C(127), UINT8_C(0), UINT8_C(75), UINT8_C(0), UINT8_C(203),
+      UINT8_C(0), UINT8_C(79), UINT8_C(0), UINT8_C(207), UINT8_C(128), UINT8_C(0), UINT8_C(128), UINT8_C(127),
+      UINT8_C(0), UINT8_C(63), UINT8_C(0), UINT8_C(191), UINT8_C(32), UINT8_C(65), UINT8_C(32), UINT8_C(193),
+      UINT8_C(205), UINT8_C(61), UINT8_C(247), UINT8_C(66), UINT8_C(247), UINT8_C(194), UINT8_C(128), UINT8_C(63),
+      UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192), UINT8_C(192), UINT8_C(63), UINT8_C(192), UINT8_C(191),
+      UINT8_C(51), UINT8_C(63), UINT8_C(51), UINT8_C(191), UINT8_C(28), UINT8_C(70), UINT8_C(28), UINT8_C(198),
+      UINT8_C(0), UINT8_C(52), UINT8_C(128), UINT8_C(63), UINT8_C(128), UINT8_C(191), UINT8_C(73), UINT8_C(64),
+      UINT8_C(73), UINT8_C(192), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(128), UINT8_C(127),
+      UINT8_C(128), UINT8_C(63), UINT8_C(128), UINT8_C(191), UINT8_C(73), UINT8_C(64), UINT8_C(73), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(128), UINT8_C(127), UINT8_C(128), UINT8_C(255),
+      UINT8_C(192), UINT8_C(127), UINT8_C(0), UINT8_C(75), UINT8_C(0), UINT8_C(203), UINT8_C(0), UINT8_C(79),
+      UINT8_C(0), UINT8_C(207), UINT8_C(128), UINT8_C(0), UINT8_C(128), UINT8_C(127), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(32), UINT8_C(65), UINT8_C(32), UINT8_C(193), UINT8_C(205), UINT8_C(61),
+      UINT8_C(247), UINT8_C(66), UINT8_C(247), UINT8_C(194), UINT8_C(128), UINT8_C(63), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(192), UINT8_C(192), UINT8_C(63), UINT8_C(192), UINT8_C(191), UINT8_C(51), UINT8_C(63),
+      UINT8_C(51), UINT8_C(191), UINT8_C(28), UINT8_C(70), UINT8_C(28), UINT8_C(198), UINT8_C(0), UINT8_C(52)
+      } },
+  };
+
+  SIMDE_TEST_HVX_PACKED_TEST(simde_Q6_Vbf_vcvt_VsfVsf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vb_vcvt2_VhfVhf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t b[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(3),
+      UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87),
+      UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185),
+      UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16), UINT8_C(85), UINT8_C(53),
+      UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250), UINT8_C(128), UINT8_C(124),
+      UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(5),
+      UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208),
+      UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(96),
+      UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108), UINT8_C(0), UINT8_C(107)
+      },
+      {
+      UINT8_C(255), UINT8_C(3), UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56),
+      UINT8_C(0), UINT8_C(184), UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46),
+      UINT8_C(183), UINT8_C(87), UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57),
+      UINT8_C(154), UINT8_C(185), UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16),
+      UINT8_C(85), UINT8_C(53), UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199),
+      UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250),
+      UINT8_C(128), UINT8_C(124), UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2),
+      UINT8_C(0), UINT8_C(5), UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185),
+      UINT8_C(0), UINT8_C(74), UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80),
+      UINT8_C(0), UINT8_C(208), UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193),
+      UINT8_C(0), UINT8_C(63), UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186),
+      UINT8_C(0), UINT8_C(96), UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108),
+      UINT8_C(0), UINT8_C(107), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66),
+      UINT8_C(72), UINT8_C(194), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124),
+      UINT8_C(0), UINT8_C(252), UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(10), UINT8_C(246), UINT8_C(0),
+      UINT8_C(123), UINT8_C(133), UINT8_C(1), UINT8_C(2), UINT8_C(254), UINT8_C(1), UINT8_C(255), UINT8_C(0),
+      UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(7), UINT8_C(249),
+      UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(12), UINT8_C(244), UINT8_C(0), UINT8_C(32),
+      UINT8_C(224), UINT8_C(1), UINT8_C(2), UINT8_C(254), UINT8_C(1), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(127), UINT8_C(127), UINT8_C(1), UINT8_C(255), UINT8_C(3),
+      UINT8_C(253), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(1), UINT8_C(255), UINT8_C(3), UINT8_C(253), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(0), UINT8_C(0),
+      UINT8_C(10), UINT8_C(246), UINT8_C(0), UINT8_C(123), UINT8_C(133), UINT8_C(1), UINT8_C(2), UINT8_C(254),
+      UINT8_C(1), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(7), UINT8_C(249), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(12),
+      UINT8_C(244), UINT8_C(0), UINT8_C(32), UINT8_C(224), UINT8_C(1), UINT8_C(2), UINT8_C(254), UINT8_C(1),
+      UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(127), UINT8_C(128), UINT8_C(0), UINT8_C(127), UINT8_C(127)
+      } },
+  };
+
+  SIMDE_TEST_HVX_PACKED_TEST(simde_Q6_Vb_vcvt2_VhfVhf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Vub_vcvt2_VhfVhf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t b[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(3),
+      UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87),
+      UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185),
+      UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16), UINT8_C(85), UINT8_C(53),
+      UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250), UINT8_C(128), UINT8_C(124),
+      UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(5),
+      UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208),
+      UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(96),
+      UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108), UINT8_C(0), UINT8_C(107)
+      },
+      {
+      UINT8_C(255), UINT8_C(3), UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56),
+      UINT8_C(0), UINT8_C(184), UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46),
+      UINT8_C(183), UINT8_C(87), UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57),
+      UINT8_C(154), UINT8_C(185), UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16),
+      UINT8_C(85), UINT8_C(53), UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199),
+      UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250),
+      UINT8_C(128), UINT8_C(124), UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2),
+      UINT8_C(0), UINT8_C(5), UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185),
+      UINT8_C(0), UINT8_C(74), UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80),
+      UINT8_C(0), UINT8_C(208), UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193),
+      UINT8_C(0), UINT8_C(63), UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186),
+      UINT8_C(0), UINT8_C(96), UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108),
+      UINT8_C(0), UINT8_C(107), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66),
+      UINT8_C(72), UINT8_C(194), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124),
+      UINT8_C(0), UINT8_C(252), UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(10), UINT8_C(0), UINT8_C(0),
+      UINT8_C(123), UINT8_C(0), UINT8_C(1), UINT8_C(2), UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(7), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(12), UINT8_C(0), UINT8_C(0), UINT8_C(32),
+      UINT8_C(0), UINT8_C(1), UINT8_C(2), UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(255), UINT8_C(1), UINT8_C(0), UINT8_C(3),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(1), UINT8_C(0), UINT8_C(3), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(10), UINT8_C(0), UINT8_C(0), UINT8_C(123), UINT8_C(0), UINT8_C(1), UINT8_C(2), UINT8_C(0),
+      UINT8_C(1), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(7), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(12),
+      UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(0), UINT8_C(1), UINT8_C(2), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(0), UINT8_C(0), UINT8_C(255), UINT8_C(255)
+      } },
+  };
+
+  SIMDE_TEST_HVX_PACKED_TEST(simde_Q6_Vub_vcvt2_VhfVhf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_V_vcvt_VhfVhf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t b[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(3),
+      UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87),
+      UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185),
+      UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16), UINT8_C(85), UINT8_C(53),
+      UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250), UINT8_C(128), UINT8_C(124),
+      UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(5),
+      UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208),
+      UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(96),
+      UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108), UINT8_C(0), UINT8_C(107)
+      },
+      {
+      UINT8_C(255), UINT8_C(3), UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56),
+      UINT8_C(0), UINT8_C(184), UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46),
+      UINT8_C(183), UINT8_C(87), UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64),
+      UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57),
+      UINT8_C(154), UINT8_C(185), UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16),
+      UINT8_C(85), UINT8_C(53), UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199),
+      UINT8_C(0), UINT8_C(1), UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250),
+      UINT8_C(128), UINT8_C(124), UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2),
+      UINT8_C(0), UINT8_C(5), UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185),
+      UINT8_C(0), UINT8_C(74), UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80),
+      UINT8_C(0), UINT8_C(208), UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193),
+      UINT8_C(0), UINT8_C(63), UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186),
+      UINT8_C(0), UINT8_C(96), UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108),
+      UINT8_C(0), UINT8_C(107), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66),
+      UINT8_C(72), UINT8_C(194), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124),
+      UINT8_C(0), UINT8_C(252), UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(126), UINT8_C(48), UINT8_C(176), UINT8_C(82), UINT8_C(210), UINT8_C(29),
+      UINT8_C(111), UINT8_C(239), UINT8_C(56), UINT8_C(64), UINT8_C(192), UINT8_C(60), UINT8_C(188), UINT8_C(51),
+      UINT8_C(179), UINT8_C(126), UINT8_C(254), UINT8_C(0), UINT8_C(43), UINT8_C(171), UINT8_C(78), UINT8_C(206),
+      UINT8_C(0), UINT8_C(128), UINT8_C(126), UINT8_C(254), UINT8_C(127), UINT8_C(127), UINT8_C(0), UINT8_C(0),
+      UINT8_C(0), UINT8_C(126), UINT8_C(50), UINT8_C(178), UINT8_C(84), UINT8_C(212), UINT8_C(30), UINT8_C(96),
+      UINT8_C(224), UINT8_C(58), UINT8_C(66), UINT8_C(194), UINT8_C(62), UINT8_C(190), UINT8_C(52), UINT8_C(180),
+      UINT8_C(126), UINT8_C(254), UINT8_C(0), UINT8_C(126), UINT8_C(126), UINT8_C(56), UINT8_C(184), UINT8_C(69),
+      UINT8_C(197), UINT8_C(0), UINT8_C(128), UINT8_C(126), UINT8_C(254), UINT8_C(127), UINT8_C(127), UINT8_C(0),
+      UINT8_C(56), UINT8_C(184), UINT8_C(69), UINT8_C(197), UINT8_C(0), UINT8_C(128), UINT8_C(126), UINT8_C(254),
+      UINT8_C(127), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(126), UINT8_C(48), UINT8_C(176),
+      UINT8_C(82), UINT8_C(210), UINT8_C(29), UINT8_C(111), UINT8_C(239), UINT8_C(56), UINT8_C(64), UINT8_C(192),
+      UINT8_C(60), UINT8_C(188), UINT8_C(51), UINT8_C(179), UINT8_C(126), UINT8_C(254), UINT8_C(0), UINT8_C(43),
+      UINT8_C(171), UINT8_C(78), UINT8_C(206), UINT8_C(0), UINT8_C(128), UINT8_C(126), UINT8_C(254), UINT8_C(127),
+      UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(126), UINT8_C(50), UINT8_C(178), UINT8_C(84),
+      UINT8_C(212), UINT8_C(30), UINT8_C(96), UINT8_C(224), UINT8_C(58), UINT8_C(66), UINT8_C(194), UINT8_C(62),
+      UINT8_C(190), UINT8_C(52), UINT8_C(180), UINT8_C(126), UINT8_C(254), UINT8_C(0), UINT8_C(126), UINT8_C(126)
+      } },
+  };
+  SIMDE_TEST_HVX_PACKED_TEST(simde_Q6_V_vcvt_VhfVhf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Wsf_vcvt_Vhf(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_lo[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_hi[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(72), UINT8_C(66), UINT8_C(72), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(124), UINT8_C(0), UINT8_C(252),
+      UINT8_C(0), UINT8_C(126), UINT8_C(0), UINT8_C(125), UINT8_C(1), UINT8_C(0), UINT8_C(255), UINT8_C(3),
+      UINT8_C(0), UINT8_C(4), UINT8_C(255), UINT8_C(123), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(201), UINT8_C(102), UINT8_C(46), UINT8_C(183), UINT8_C(87),
+      UINT8_C(183), UINT8_C(215), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(62), UINT8_C(0), UINT8_C(190), UINT8_C(154), UINT8_C(57), UINT8_C(154), UINT8_C(185),
+      UINT8_C(0), UINT8_C(104), UINT8_C(0), UINT8_C(232), UINT8_C(0), UINT8_C(16), UINT8_C(85), UINT8_C(53),
+      UINT8_C(85), UINT8_C(181), UINT8_C(0), UINT8_C(71), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(1),
+      UINT8_C(0), UINT8_C(129), UINT8_C(0), UINT8_C(122), UINT8_C(0), UINT8_C(250), UINT8_C(128), UINT8_C(124),
+      UINT8_C(64), UINT8_C(124), UINT8_C(2), UINT8_C(0), UINT8_C(255), UINT8_C(2), UINT8_C(0), UINT8_C(5),
+      UINT8_C(255), UINT8_C(122), UINT8_C(0), UINT8_C(57), UINT8_C(0), UINT8_C(185), UINT8_C(0), UINT8_C(74),
+      UINT8_C(0), UINT8_C(202), UINT8_C(0), UINT8_C(47), UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208),
+      UINT8_C(0), UINT8_C(61), UINT8_C(0), UINT8_C(65), UINT8_C(0), UINT8_C(193), UINT8_C(0), UINT8_C(63),
+      UINT8_C(0), UINT8_C(191), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(96),
+      UINT8_C(0), UINT8_C(224), UINT8_C(0), UINT8_C(17), UINT8_C(0), UINT8_C(108), UINT8_C(0), UINT8_C(107)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(191),
+      UINT8_C(0), UINT8_C(0), UINT8_C(73), UINT8_C(64), UINT8_C(0), UINT8_C(0), UINT8_C(73), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(255),
+      UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(160), UINT8_C(127),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(51), UINT8_C(0), UINT8_C(192), UINT8_C(127), UINT8_C(56),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(56), UINT8_C(0), UINT8_C(224), UINT8_C(127), UINT8_C(71),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(191),
+      UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(65), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(193),
+      UINT8_C(0), UINT8_C(192), UINT8_C(204), UINT8_C(61), UINT8_C(0), UINT8_C(224), UINT8_C(246), UINT8_C(66),
+      UINT8_C(0), UINT8_C(224), UINT8_C(246), UINT8_C(194), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(192), UINT8_C(191),
+      UINT8_C(0), UINT8_C(64), UINT8_C(51), UINT8_C(63), UINT8_C(0), UINT8_C(64), UINT8_C(51), UINT8_C(191),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(69), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(197),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(160), UINT8_C(170), UINT8_C(62)
+      },
+      {
+      UINT8_C(0), UINT8_C(160), UINT8_C(170), UINT8_C(190), UINT8_C(0), UINT8_C(0), UINT8_C(224), UINT8_C(64),
+      UINT8_C(0), UINT8_C(0), UINT8_C(224), UINT8_C(192), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(55),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(183), UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(71),
+      UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(199), UINT8_C(0), UINT8_C(0), UINT8_C(144), UINT8_C(127),
+      UINT8_C(0), UINT8_C(0), UINT8_C(136), UINT8_C(127), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(52),
+      UINT8_C(0), UINT8_C(192), UINT8_C(63), UINT8_C(56), UINT8_C(0), UINT8_C(0), UINT8_C(160), UINT8_C(56),
+      UINT8_C(0), UINT8_C(224), UINT8_C(95), UINT8_C(71), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(191), UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(65),
+      UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(193), UINT8_C(0), UINT8_C(0), UINT8_C(224), UINT8_C(61),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(66), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(194),
+      UINT8_C(0), UINT8_C(0), UINT8_C(160), UINT8_C(63), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(64),
+      UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(192), UINT8_C(0), UINT8_C(0), UINT8_C(224), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(224), UINT8_C(191), UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(63),
+      UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(191), UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(68),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(196), UINT8_C(0), UINT8_C(0), UINT8_C(32), UINT8_C(58),
+      UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(69), UINT8_C(0), UINT8_C(0), UINT8_C(96), UINT8_C(69)
+      } },
+  };
+  SIMDE_TEST_HVX_PAIR_TEST(simde_Q6_Wsf_vcvt_Vhf);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Whf_vcvt_Vb(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_lo[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_hi[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(192), UINT8_C(193), UINT8_C(194), UINT8_C(195), UINT8_C(196), UINT8_C(197), UINT8_C(198), UINT8_C(199),
+      UINT8_C(200), UINT8_C(201), UINT8_C(202), UINT8_C(203), UINT8_C(204), UINT8_C(205), UINT8_C(206), UINT8_C(207),
+      UINT8_C(208), UINT8_C(209), UINT8_C(210), UINT8_C(211), UINT8_C(212), UINT8_C(213), UINT8_C(214), UINT8_C(215),
+      UINT8_C(216), UINT8_C(217), UINT8_C(218), UINT8_C(219), UINT8_C(220), UINT8_C(221), UINT8_C(222), UINT8_C(223),
+      UINT8_C(224), UINT8_C(225), UINT8_C(226), UINT8_C(227), UINT8_C(228), UINT8_C(229), UINT8_C(230), UINT8_C(231),
+      UINT8_C(232), UINT8_C(233), UINT8_C(234), UINT8_C(235), UINT8_C(236), UINT8_C(237), UINT8_C(238), UINT8_C(239),
+      UINT8_C(240), UINT8_C(241), UINT8_C(242), UINT8_C(243), UINT8_C(244), UINT8_C(245), UINT8_C(246), UINT8_C(247),
+      UINT8_C(248), UINT8_C(249), UINT8_C(250), UINT8_C(251), UINT8_C(252), UINT8_C(253), UINT8_C(254), UINT8_C(255),
+      UINT8_C(0), UINT8_C(1), UINT8_C(2), UINT8_C(3), UINT8_C(4), UINT8_C(5), UINT8_C(6), UINT8_C(7),
+      UINT8_C(8), UINT8_C(9), UINT8_C(10), UINT8_C(11), UINT8_C(12), UINT8_C(13), UINT8_C(14), UINT8_C(15),
+      UINT8_C(16), UINT8_C(17), UINT8_C(18), UINT8_C(19), UINT8_C(20), UINT8_C(21), UINT8_C(22), UINT8_C(23),
+      UINT8_C(24), UINT8_C(25), UINT8_C(26), UINT8_C(27), UINT8_C(28), UINT8_C(29), UINT8_C(30), UINT8_C(31),
+      UINT8_C(32), UINT8_C(33), UINT8_C(34), UINT8_C(35), UINT8_C(36), UINT8_C(37), UINT8_C(38), UINT8_C(39),
+      UINT8_C(40), UINT8_C(41), UINT8_C(42), UINT8_C(43), UINT8_C(44), UINT8_C(45), UINT8_C(46), UINT8_C(47),
+      UINT8_C(48), UINT8_C(49), UINT8_C(50), UINT8_C(51), UINT8_C(52), UINT8_C(53), UINT8_C(54), UINT8_C(55),
+      UINT8_C(56), UINT8_C(57), UINT8_C(58), UINT8_C(59), UINT8_C(60), UINT8_C(61), UINT8_C(62), UINT8_C(63)
+      },
+      {
+      UINT8_C(0), UINT8_C(212), UINT8_C(224), UINT8_C(211), UINT8_C(192), UINT8_C(211), UINT8_C(160), UINT8_C(211),
+      UINT8_C(128), UINT8_C(211), UINT8_C(96), UINT8_C(211), UINT8_C(64), UINT8_C(211), UINT8_C(32), UINT8_C(211),
+      UINT8_C(0), UINT8_C(211), UINT8_C(224), UINT8_C(210), UINT8_C(192), UINT8_C(210), UINT8_C(160), UINT8_C(210),
+      UINT8_C(128), UINT8_C(210), UINT8_C(96), UINT8_C(210), UINT8_C(64), UINT8_C(210), UINT8_C(32), UINT8_C(210),
+      UINT8_C(0), UINT8_C(210), UINT8_C(224), UINT8_C(209), UINT8_C(192), UINT8_C(209), UINT8_C(160), UINT8_C(209),
+      UINT8_C(128), UINT8_C(209), UINT8_C(96), UINT8_C(209), UINT8_C(64), UINT8_C(209), UINT8_C(32), UINT8_C(209),
+      UINT8_C(0), UINT8_C(209), UINT8_C(224), UINT8_C(208), UINT8_C(192), UINT8_C(208), UINT8_C(160), UINT8_C(208),
+      UINT8_C(128), UINT8_C(208), UINT8_C(96), UINT8_C(208), UINT8_C(64), UINT8_C(208), UINT8_C(32), UINT8_C(208),
+      UINT8_C(0), UINT8_C(208), UINT8_C(192), UINT8_C(207), UINT8_C(128), UINT8_C(207), UINT8_C(64), UINT8_C(207),
+      UINT8_C(0), UINT8_C(207), UINT8_C(192), UINT8_C(206), UINT8_C(128), UINT8_C(206), UINT8_C(64), UINT8_C(206),
+      UINT8_C(0), UINT8_C(206), UINT8_C(192), UINT8_C(205), UINT8_C(128), UINT8_C(205), UINT8_C(64), UINT8_C(205),
+      UINT8_C(0), UINT8_C(205), UINT8_C(192), UINT8_C(204), UINT8_C(128), UINT8_C(204), UINT8_C(64), UINT8_C(204),
+      UINT8_C(0), UINT8_C(204), UINT8_C(128), UINT8_C(203), UINT8_C(0), UINT8_C(203), UINT8_C(128), UINT8_C(202),
+      UINT8_C(0), UINT8_C(202), UINT8_C(128), UINT8_C(201), UINT8_C(0), UINT8_C(201), UINT8_C(128), UINT8_C(200),
+      UINT8_C(0), UINT8_C(200), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(198), UINT8_C(0), UINT8_C(197),
+      UINT8_C(0), UINT8_C(196), UINT8_C(0), UINT8_C(194), UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(188)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(66),
+      UINT8_C(0), UINT8_C(68), UINT8_C(0), UINT8_C(69), UINT8_C(0), UINT8_C(70), UINT8_C(0), UINT8_C(71),
+      UINT8_C(0), UINT8_C(72), UINT8_C(128), UINT8_C(72), UINT8_C(0), UINT8_C(73), UINT8_C(128), UINT8_C(73),
+      UINT8_C(0), UINT8_C(74), UINT8_C(128), UINT8_C(74), UINT8_C(0), UINT8_C(75), UINT8_C(128), UINT8_C(75),
+      UINT8_C(0), UINT8_C(76), UINT8_C(64), UINT8_C(76), UINT8_C(128), UINT8_C(76), UINT8_C(192), UINT8_C(76),
+      UINT8_C(0), UINT8_C(77), UINT8_C(64), UINT8_C(77), UINT8_C(128), UINT8_C(77), UINT8_C(192), UINT8_C(77),
+      UINT8_C(0), UINT8_C(78), UINT8_C(64), UINT8_C(78), UINT8_C(128), UINT8_C(78), UINT8_C(192), UINT8_C(78),
+      UINT8_C(0), UINT8_C(79), UINT8_C(64), UINT8_C(79), UINT8_C(128), UINT8_C(79), UINT8_C(192), UINT8_C(79),
+      UINT8_C(0), UINT8_C(80), UINT8_C(32), UINT8_C(80), UINT8_C(64), UINT8_C(80), UINT8_C(96), UINT8_C(80),
+      UINT8_C(128), UINT8_C(80), UINT8_C(160), UINT8_C(80), UINT8_C(192), UINT8_C(80), UINT8_C(224), UINT8_C(80),
+      UINT8_C(0), UINT8_C(81), UINT8_C(32), UINT8_C(81), UINT8_C(64), UINT8_C(81), UINT8_C(96), UINT8_C(81),
+      UINT8_C(128), UINT8_C(81), UINT8_C(160), UINT8_C(81), UINT8_C(192), UINT8_C(81), UINT8_C(224), UINT8_C(81),
+      UINT8_C(0), UINT8_C(82), UINT8_C(32), UINT8_C(82), UINT8_C(64), UINT8_C(82), UINT8_C(96), UINT8_C(82),
+      UINT8_C(128), UINT8_C(82), UINT8_C(160), UINT8_C(82), UINT8_C(192), UINT8_C(82), UINT8_C(224), UINT8_C(82),
+      UINT8_C(0), UINT8_C(83), UINT8_C(32), UINT8_C(83), UINT8_C(64), UINT8_C(83), UINT8_C(96), UINT8_C(83),
+      UINT8_C(128), UINT8_C(83), UINT8_C(160), UINT8_C(83), UINT8_C(192), UINT8_C(83), UINT8_C(224), UINT8_C(83)
+      } },
+  };
+
+  SIMDE_TEST_HVX_PAIR_TEST(simde_Q6_Whf_vcvt_Vb);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Whf_vcvt_Vub(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_lo[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_hi[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(2), UINT8_C(4), UINT8_C(6), UINT8_C(8), UINT8_C(10), UINT8_C(12), UINT8_C(14),
+      UINT8_C(16), UINT8_C(18), UINT8_C(20), UINT8_C(22), UINT8_C(24), UINT8_C(26), UINT8_C(28), UINT8_C(30),
+      UINT8_C(32), UINT8_C(34), UINT8_C(36), UINT8_C(38), UINT8_C(40), UINT8_C(42), UINT8_C(44), UINT8_C(46),
+      UINT8_C(48), UINT8_C(50), UINT8_C(52), UINT8_C(54), UINT8_C(56), UINT8_C(58), UINT8_C(60), UINT8_C(62),
+      UINT8_C(64), UINT8_C(66), UINT8_C(68), UINT8_C(70), UINT8_C(72), UINT8_C(74), UINT8_C(76), UINT8_C(78),
+      UINT8_C(80), UINT8_C(82), UINT8_C(84), UINT8_C(86), UINT8_C(88), UINT8_C(90), UINT8_C(92), UINT8_C(94),
+      UINT8_C(96), UINT8_C(98), UINT8_C(100), UINT8_C(102), UINT8_C(104), UINT8_C(106), UINT8_C(108), UINT8_C(110),
+      UINT8_C(112), UINT8_C(114), UINT8_C(116), UINT8_C(118), UINT8_C(120), UINT8_C(122), UINT8_C(124), UINT8_C(126),
+      UINT8_C(128), UINT8_C(130), UINT8_C(132), UINT8_C(134), UINT8_C(136), UINT8_C(138), UINT8_C(140), UINT8_C(142),
+      UINT8_C(144), UINT8_C(146), UINT8_C(148), UINT8_C(150), UINT8_C(152), UINT8_C(154), UINT8_C(156), UINT8_C(158),
+      UINT8_C(160), UINT8_C(162), UINT8_C(164), UINT8_C(166), UINT8_C(168), UINT8_C(170), UINT8_C(172), UINT8_C(174),
+      UINT8_C(176), UINT8_C(178), UINT8_C(180), UINT8_C(182), UINT8_C(184), UINT8_C(186), UINT8_C(188), UINT8_C(190),
+      UINT8_C(192), UINT8_C(194), UINT8_C(196), UINT8_C(198), UINT8_C(200), UINT8_C(202), UINT8_C(204), UINT8_C(206),
+      UINT8_C(208), UINT8_C(210), UINT8_C(212), UINT8_C(214), UINT8_C(216), UINT8_C(218), UINT8_C(220), UINT8_C(222),
+      UINT8_C(224), UINT8_C(226), UINT8_C(228), UINT8_C(230), UINT8_C(232), UINT8_C(234), UINT8_C(236), UINT8_C(238),
+      UINT8_C(240), UINT8_C(242), UINT8_C(244), UINT8_C(246), UINT8_C(248), UINT8_C(250), UINT8_C(252), UINT8_C(254)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(68), UINT8_C(0), UINT8_C(70),
+      UINT8_C(0), UINT8_C(72), UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(74), UINT8_C(0), UINT8_C(75),
+      UINT8_C(0), UINT8_C(76), UINT8_C(128), UINT8_C(76), UINT8_C(0), UINT8_C(77), UINT8_C(128), UINT8_C(77),
+      UINT8_C(0), UINT8_C(78), UINT8_C(128), UINT8_C(78), UINT8_C(0), UINT8_C(79), UINT8_C(128), UINT8_C(79),
+      UINT8_C(0), UINT8_C(80), UINT8_C(64), UINT8_C(80), UINT8_C(128), UINT8_C(80), UINT8_C(192), UINT8_C(80),
+      UINT8_C(0), UINT8_C(81), UINT8_C(64), UINT8_C(81), UINT8_C(128), UINT8_C(81), UINT8_C(192), UINT8_C(81),
+      UINT8_C(0), UINT8_C(82), UINT8_C(64), UINT8_C(82), UINT8_C(128), UINT8_C(82), UINT8_C(192), UINT8_C(82),
+      UINT8_C(0), UINT8_C(83), UINT8_C(64), UINT8_C(83), UINT8_C(128), UINT8_C(83), UINT8_C(192), UINT8_C(83),
+      UINT8_C(0), UINT8_C(84), UINT8_C(32), UINT8_C(84), UINT8_C(64), UINT8_C(84), UINT8_C(96), UINT8_C(84),
+      UINT8_C(128), UINT8_C(84), UINT8_C(160), UINT8_C(84), UINT8_C(192), UINT8_C(84), UINT8_C(224), UINT8_C(84),
+      UINT8_C(0), UINT8_C(85), UINT8_C(32), UINT8_C(85), UINT8_C(64), UINT8_C(85), UINT8_C(96), UINT8_C(85),
+      UINT8_C(128), UINT8_C(85), UINT8_C(160), UINT8_C(85), UINT8_C(192), UINT8_C(85), UINT8_C(224), UINT8_C(85),
+      UINT8_C(0), UINT8_C(86), UINT8_C(32), UINT8_C(86), UINT8_C(64), UINT8_C(86), UINT8_C(96), UINT8_C(86),
+      UINT8_C(128), UINT8_C(86), UINT8_C(160), UINT8_C(86), UINT8_C(192), UINT8_C(86), UINT8_C(224), UINT8_C(86),
+      UINT8_C(0), UINT8_C(87), UINT8_C(32), UINT8_C(87), UINT8_C(64), UINT8_C(87), UINT8_C(96), UINT8_C(87),
+      UINT8_C(128), UINT8_C(87), UINT8_C(160), UINT8_C(87), UINT8_C(192), UINT8_C(87), UINT8_C(224), UINT8_C(87)
+      },
+      {
+      UINT8_C(0), UINT8_C(88), UINT8_C(16), UINT8_C(88), UINT8_C(32), UINT8_C(88), UINT8_C(48), UINT8_C(88),
+      UINT8_C(64), UINT8_C(88), UINT8_C(80), UINT8_C(88), UINT8_C(96), UINT8_C(88), UINT8_C(112), UINT8_C(88),
+      UINT8_C(128), UINT8_C(88), UINT8_C(144), UINT8_C(88), UINT8_C(160), UINT8_C(88), UINT8_C(176), UINT8_C(88),
+      UINT8_C(192), UINT8_C(88), UINT8_C(208), UINT8_C(88), UINT8_C(224), UINT8_C(88), UINT8_C(240), UINT8_C(88),
+      UINT8_C(0), UINT8_C(89), UINT8_C(16), UINT8_C(89), UINT8_C(32), UINT8_C(89), UINT8_C(48), UINT8_C(89),
+      UINT8_C(64), UINT8_C(89), UINT8_C(80), UINT8_C(89), UINT8_C(96), UINT8_C(89), UINT8_C(112), UINT8_C(89),
+      UINT8_C(128), UINT8_C(89), UINT8_C(144), UINT8_C(89), UINT8_C(160), UINT8_C(89), UINT8_C(176), UINT8_C(89),
+      UINT8_C(192), UINT8_C(89), UINT8_C(208), UINT8_C(89), UINT8_C(224), UINT8_C(89), UINT8_C(240), UINT8_C(89),
+      UINT8_C(0), UINT8_C(90), UINT8_C(16), UINT8_C(90), UINT8_C(32), UINT8_C(90), UINT8_C(48), UINT8_C(90),
+      UINT8_C(64), UINT8_C(90), UINT8_C(80), UINT8_C(90), UINT8_C(96), UINT8_C(90), UINT8_C(112), UINT8_C(90),
+      UINT8_C(128), UINT8_C(90), UINT8_C(144), UINT8_C(90), UINT8_C(160), UINT8_C(90), UINT8_C(176), UINT8_C(90),
+      UINT8_C(192), UINT8_C(90), UINT8_C(208), UINT8_C(90), UINT8_C(224), UINT8_C(90), UINT8_C(240), UINT8_C(90),
+      UINT8_C(0), UINT8_C(91), UINT8_C(16), UINT8_C(91), UINT8_C(32), UINT8_C(91), UINT8_C(48), UINT8_C(91),
+      UINT8_C(64), UINT8_C(91), UINT8_C(80), UINT8_C(91), UINT8_C(96), UINT8_C(91), UINT8_C(112), UINT8_C(91),
+      UINT8_C(128), UINT8_C(91), UINT8_C(144), UINT8_C(91), UINT8_C(160), UINT8_C(91), UINT8_C(176), UINT8_C(91),
+      UINT8_C(192), UINT8_C(91), UINT8_C(208), UINT8_C(91), UINT8_C(224), UINT8_C(91), UINT8_C(240), UINT8_C(91)
+      } },
+  };
+  SIMDE_TEST_HVX_PAIR_TEST(simde_Q6_Whf_vcvt_Vub);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Whf_vcvt2_Vb(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_lo[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_hi[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(192), UINT8_C(193), UINT8_C(194), UINT8_C(195), UINT8_C(196), UINT8_C(197), UINT8_C(198), UINT8_C(199),
+      UINT8_C(200), UINT8_C(201), UINT8_C(202), UINT8_C(203), UINT8_C(204), UINT8_C(205), UINT8_C(206), UINT8_C(207),
+      UINT8_C(208), UINT8_C(209), UINT8_C(210), UINT8_C(211), UINT8_C(212), UINT8_C(213), UINT8_C(214), UINT8_C(215),
+      UINT8_C(216), UINT8_C(217), UINT8_C(218), UINT8_C(219), UINT8_C(220), UINT8_C(221), UINT8_C(222), UINT8_C(223),
+      UINT8_C(224), UINT8_C(225), UINT8_C(226), UINT8_C(227), UINT8_C(228), UINT8_C(229), UINT8_C(230), UINT8_C(231),
+      UINT8_C(232), UINT8_C(233), UINT8_C(234), UINT8_C(235), UINT8_C(236), UINT8_C(237), UINT8_C(238), UINT8_C(239),
+      UINT8_C(240), UINT8_C(241), UINT8_C(242), UINT8_C(243), UINT8_C(244), UINT8_C(245), UINT8_C(246), UINT8_C(247),
+      UINT8_C(248), UINT8_C(249), UINT8_C(250), UINT8_C(251), UINT8_C(252), UINT8_C(253), UINT8_C(254), UINT8_C(255),
+      UINT8_C(0), UINT8_C(1), UINT8_C(2), UINT8_C(3), UINT8_C(4), UINT8_C(5), UINT8_C(6), UINT8_C(7),
+      UINT8_C(8), UINT8_C(9), UINT8_C(10), UINT8_C(11), UINT8_C(12), UINT8_C(13), UINT8_C(14), UINT8_C(15),
+      UINT8_C(16), UINT8_C(17), UINT8_C(18), UINT8_C(19), UINT8_C(20), UINT8_C(21), UINT8_C(22), UINT8_C(23),
+      UINT8_C(24), UINT8_C(25), UINT8_C(26), UINT8_C(27), UINT8_C(28), UINT8_C(29), UINT8_C(30), UINT8_C(31),
+      UINT8_C(32), UINT8_C(33), UINT8_C(34), UINT8_C(35), UINT8_C(36), UINT8_C(37), UINT8_C(38), UINT8_C(39),
+      UINT8_C(40), UINT8_C(41), UINT8_C(42), UINT8_C(43), UINT8_C(44), UINT8_C(45), UINT8_C(46), UINT8_C(47),
+      UINT8_C(48), UINT8_C(49), UINT8_C(50), UINT8_C(51), UINT8_C(52), UINT8_C(53), UINT8_C(54), UINT8_C(55),
+      UINT8_C(56), UINT8_C(57), UINT8_C(58), UINT8_C(59), UINT8_C(60), UINT8_C(61), UINT8_C(62), UINT8_C(63)
+      },
+      {
+      UINT8_C(0), UINT8_C(212), UINT8_C(224), UINT8_C(211), UINT8_C(192), UINT8_C(211), UINT8_C(160), UINT8_C(211),
+      UINT8_C(128), UINT8_C(211), UINT8_C(96), UINT8_C(211), UINT8_C(64), UINT8_C(211), UINT8_C(32), UINT8_C(211),
+      UINT8_C(0), UINT8_C(211), UINT8_C(224), UINT8_C(210), UINT8_C(192), UINT8_C(210), UINT8_C(160), UINT8_C(210),
+      UINT8_C(128), UINT8_C(210), UINT8_C(96), UINT8_C(210), UINT8_C(64), UINT8_C(210), UINT8_C(32), UINT8_C(210),
+      UINT8_C(0), UINT8_C(210), UINT8_C(224), UINT8_C(209), UINT8_C(192), UINT8_C(209), UINT8_C(160), UINT8_C(209),
+      UINT8_C(128), UINT8_C(209), UINT8_C(96), UINT8_C(209), UINT8_C(64), UINT8_C(209), UINT8_C(32), UINT8_C(209),
+      UINT8_C(0), UINT8_C(209), UINT8_C(224), UINT8_C(208), UINT8_C(192), UINT8_C(208), UINT8_C(160), UINT8_C(208),
+      UINT8_C(128), UINT8_C(208), UINT8_C(96), UINT8_C(208), UINT8_C(64), UINT8_C(208), UINT8_C(32), UINT8_C(208),
+      UINT8_C(0), UINT8_C(208), UINT8_C(192), UINT8_C(207), UINT8_C(128), UINT8_C(207), UINT8_C(64), UINT8_C(207),
+      UINT8_C(0), UINT8_C(207), UINT8_C(192), UINT8_C(206), UINT8_C(128), UINT8_C(206), UINT8_C(64), UINT8_C(206),
+      UINT8_C(0), UINT8_C(206), UINT8_C(192), UINT8_C(205), UINT8_C(128), UINT8_C(205), UINT8_C(64), UINT8_C(205),
+      UINT8_C(0), UINT8_C(205), UINT8_C(192), UINT8_C(204), UINT8_C(128), UINT8_C(204), UINT8_C(64), UINT8_C(204),
+      UINT8_C(0), UINT8_C(204), UINT8_C(128), UINT8_C(203), UINT8_C(0), UINT8_C(203), UINT8_C(128), UINT8_C(202),
+      UINT8_C(0), UINT8_C(202), UINT8_C(128), UINT8_C(201), UINT8_C(0), UINT8_C(201), UINT8_C(128), UINT8_C(200),
+      UINT8_C(0), UINT8_C(200), UINT8_C(0), UINT8_C(199), UINT8_C(0), UINT8_C(198), UINT8_C(0), UINT8_C(197),
+      UINT8_C(0), UINT8_C(196), UINT8_C(0), UINT8_C(194), UINT8_C(0), UINT8_C(192), UINT8_C(0), UINT8_C(188)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(66),
+      UINT8_C(0), UINT8_C(68), UINT8_C(0), UINT8_C(69), UINT8_C(0), UINT8_C(70), UINT8_C(0), UINT8_C(71),
+      UINT8_C(0), UINT8_C(72), UINT8_C(128), UINT8_C(72), UINT8_C(0), UINT8_C(73), UINT8_C(128), UINT8_C(73),
+      UINT8_C(0), UINT8_C(74), UINT8_C(128), UINT8_C(74), UINT8_C(0), UINT8_C(75), UINT8_C(128), UINT8_C(75),
+      UINT8_C(0), UINT8_C(76), UINT8_C(64), UINT8_C(76), UINT8_C(128), UINT8_C(76), UINT8_C(192), UINT8_C(76),
+      UINT8_C(0), UINT8_C(77), UINT8_C(64), UINT8_C(77), UINT8_C(128), UINT8_C(77), UINT8_C(192), UINT8_C(77),
+      UINT8_C(0), UINT8_C(78), UINT8_C(64), UINT8_C(78), UINT8_C(128), UINT8_C(78), UINT8_C(192), UINT8_C(78),
+      UINT8_C(0), UINT8_C(79), UINT8_C(64), UINT8_C(79), UINT8_C(128), UINT8_C(79), UINT8_C(192), UINT8_C(79),
+      UINT8_C(0), UINT8_C(80), UINT8_C(32), UINT8_C(80), UINT8_C(64), UINT8_C(80), UINT8_C(96), UINT8_C(80),
+      UINT8_C(128), UINT8_C(80), UINT8_C(160), UINT8_C(80), UINT8_C(192), UINT8_C(80), UINT8_C(224), UINT8_C(80),
+      UINT8_C(0), UINT8_C(81), UINT8_C(32), UINT8_C(81), UINT8_C(64), UINT8_C(81), UINT8_C(96), UINT8_C(81),
+      UINT8_C(128), UINT8_C(81), UINT8_C(160), UINT8_C(81), UINT8_C(192), UINT8_C(81), UINT8_C(224), UINT8_C(81),
+      UINT8_C(0), UINT8_C(82), UINT8_C(32), UINT8_C(82), UINT8_C(64), UINT8_C(82), UINT8_C(96), UINT8_C(82),
+      UINT8_C(128), UINT8_C(82), UINT8_C(160), UINT8_C(82), UINT8_C(192), UINT8_C(82), UINT8_C(224), UINT8_C(82),
+      UINT8_C(0), UINT8_C(83), UINT8_C(32), UINT8_C(83), UINT8_C(64), UINT8_C(83), UINT8_C(96), UINT8_C(83),
+      UINT8_C(128), UINT8_C(83), UINT8_C(160), UINT8_C(83), UINT8_C(192), UINT8_C(83), UINT8_C(224), UINT8_C(83)
+      } },
+  };
+  SIMDE_TEST_HVX_PAIR_TEST(simde_Q6_Whf_vcvt2_Vb);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Whf_vcvt2_Vub(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_lo[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_hi[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(0), UINT8_C(2), UINT8_C(4), UINT8_C(6), UINT8_C(8), UINT8_C(10), UINT8_C(12), UINT8_C(14),
+      UINT8_C(16), UINT8_C(18), UINT8_C(20), UINT8_C(22), UINT8_C(24), UINT8_C(26), UINT8_C(28), UINT8_C(30),
+      UINT8_C(32), UINT8_C(34), UINT8_C(36), UINT8_C(38), UINT8_C(40), UINT8_C(42), UINT8_C(44), UINT8_C(46),
+      UINT8_C(48), UINT8_C(50), UINT8_C(52), UINT8_C(54), UINT8_C(56), UINT8_C(58), UINT8_C(60), UINT8_C(62),
+      UINT8_C(64), UINT8_C(66), UINT8_C(68), UINT8_C(70), UINT8_C(72), UINT8_C(74), UINT8_C(76), UINT8_C(78),
+      UINT8_C(80), UINT8_C(82), UINT8_C(84), UINT8_C(86), UINT8_C(88), UINT8_C(90), UINT8_C(92), UINT8_C(94),
+      UINT8_C(96), UINT8_C(98), UINT8_C(100), UINT8_C(102), UINT8_C(104), UINT8_C(106), UINT8_C(108), UINT8_C(110),
+      UINT8_C(112), UINT8_C(114), UINT8_C(116), UINT8_C(118), UINT8_C(120), UINT8_C(122), UINT8_C(124), UINT8_C(126),
+      UINT8_C(128), UINT8_C(130), UINT8_C(132), UINT8_C(134), UINT8_C(136), UINT8_C(138), UINT8_C(140), UINT8_C(142),
+      UINT8_C(144), UINT8_C(146), UINT8_C(148), UINT8_C(150), UINT8_C(152), UINT8_C(154), UINT8_C(156), UINT8_C(158),
+      UINT8_C(160), UINT8_C(162), UINT8_C(164), UINT8_C(166), UINT8_C(168), UINT8_C(170), UINT8_C(172), UINT8_C(174),
+      UINT8_C(176), UINT8_C(178), UINT8_C(180), UINT8_C(182), UINT8_C(184), UINT8_C(186), UINT8_C(188), UINT8_C(190),
+      UINT8_C(192), UINT8_C(194), UINT8_C(196), UINT8_C(198), UINT8_C(200), UINT8_C(202), UINT8_C(204), UINT8_C(206),
+      UINT8_C(208), UINT8_C(210), UINT8_C(212), UINT8_C(214), UINT8_C(216), UINT8_C(218), UINT8_C(220), UINT8_C(222),
+      UINT8_C(224), UINT8_C(226), UINT8_C(228), UINT8_C(230), UINT8_C(232), UINT8_C(234), UINT8_C(236), UINT8_C(238),
+      UINT8_C(240), UINT8_C(242), UINT8_C(244), UINT8_C(246), UINT8_C(248), UINT8_C(250), UINT8_C(252), UINT8_C(254)
+      },
+      {
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(68), UINT8_C(0), UINT8_C(70),
+      UINT8_C(0), UINT8_C(72), UINT8_C(0), UINT8_C(73), UINT8_C(0), UINT8_C(74), UINT8_C(0), UINT8_C(75),
+      UINT8_C(0), UINT8_C(76), UINT8_C(128), UINT8_C(76), UINT8_C(0), UINT8_C(77), UINT8_C(128), UINT8_C(77),
+      UINT8_C(0), UINT8_C(78), UINT8_C(128), UINT8_C(78), UINT8_C(0), UINT8_C(79), UINT8_C(128), UINT8_C(79),
+      UINT8_C(0), UINT8_C(80), UINT8_C(64), UINT8_C(80), UINT8_C(128), UINT8_C(80), UINT8_C(192), UINT8_C(80),
+      UINT8_C(0), UINT8_C(81), UINT8_C(64), UINT8_C(81), UINT8_C(128), UINT8_C(81), UINT8_C(192), UINT8_C(81),
+      UINT8_C(0), UINT8_C(82), UINT8_C(64), UINT8_C(82), UINT8_C(128), UINT8_C(82), UINT8_C(192), UINT8_C(82),
+      UINT8_C(0), UINT8_C(83), UINT8_C(64), UINT8_C(83), UINT8_C(128), UINT8_C(83), UINT8_C(192), UINT8_C(83),
+      UINT8_C(0), UINT8_C(84), UINT8_C(32), UINT8_C(84), UINT8_C(64), UINT8_C(84), UINT8_C(96), UINT8_C(84),
+      UINT8_C(128), UINT8_C(84), UINT8_C(160), UINT8_C(84), UINT8_C(192), UINT8_C(84), UINT8_C(224), UINT8_C(84),
+      UINT8_C(0), UINT8_C(85), UINT8_C(32), UINT8_C(85), UINT8_C(64), UINT8_C(85), UINT8_C(96), UINT8_C(85),
+      UINT8_C(128), UINT8_C(85), UINT8_C(160), UINT8_C(85), UINT8_C(192), UINT8_C(85), UINT8_C(224), UINT8_C(85),
+      UINT8_C(0), UINT8_C(86), UINT8_C(32), UINT8_C(86), UINT8_C(64), UINT8_C(86), UINT8_C(96), UINT8_C(86),
+      UINT8_C(128), UINT8_C(86), UINT8_C(160), UINT8_C(86), UINT8_C(192), UINT8_C(86), UINT8_C(224), UINT8_C(86),
+      UINT8_C(0), UINT8_C(87), UINT8_C(32), UINT8_C(87), UINT8_C(64), UINT8_C(87), UINT8_C(96), UINT8_C(87),
+      UINT8_C(128), UINT8_C(87), UINT8_C(160), UINT8_C(87), UINT8_C(192), UINT8_C(87), UINT8_C(224), UINT8_C(87)
+      },
+      {
+      UINT8_C(0), UINT8_C(88), UINT8_C(16), UINT8_C(88), UINT8_C(32), UINT8_C(88), UINT8_C(48), UINT8_C(88),
+      UINT8_C(64), UINT8_C(88), UINT8_C(80), UINT8_C(88), UINT8_C(96), UINT8_C(88), UINT8_C(112), UINT8_C(88),
+      UINT8_C(128), UINT8_C(88), UINT8_C(144), UINT8_C(88), UINT8_C(160), UINT8_C(88), UINT8_C(176), UINT8_C(88),
+      UINT8_C(192), UINT8_C(88), UINT8_C(208), UINT8_C(88), UINT8_C(224), UINT8_C(88), UINT8_C(240), UINT8_C(88),
+      UINT8_C(0), UINT8_C(89), UINT8_C(16), UINT8_C(89), UINT8_C(32), UINT8_C(89), UINT8_C(48), UINT8_C(89),
+      UINT8_C(64), UINT8_C(89), UINT8_C(80), UINT8_C(89), UINT8_C(96), UINT8_C(89), UINT8_C(112), UINT8_C(89),
+      UINT8_C(128), UINT8_C(89), UINT8_C(144), UINT8_C(89), UINT8_C(160), UINT8_C(89), UINT8_C(176), UINT8_C(89),
+      UINT8_C(192), UINT8_C(89), UINT8_C(208), UINT8_C(89), UINT8_C(224), UINT8_C(89), UINT8_C(240), UINT8_C(89),
+      UINT8_C(0), UINT8_C(90), UINT8_C(16), UINT8_C(90), UINT8_C(32), UINT8_C(90), UINT8_C(48), UINT8_C(90),
+      UINT8_C(64), UINT8_C(90), UINT8_C(80), UINT8_C(90), UINT8_C(96), UINT8_C(90), UINT8_C(112), UINT8_C(90),
+      UINT8_C(128), UINT8_C(90), UINT8_C(144), UINT8_C(90), UINT8_C(160), UINT8_C(90), UINT8_C(176), UINT8_C(90),
+      UINT8_C(192), UINT8_C(90), UINT8_C(208), UINT8_C(90), UINT8_C(224), UINT8_C(90), UINT8_C(240), UINT8_C(90),
+      UINT8_C(0), UINT8_C(91), UINT8_C(16), UINT8_C(91), UINT8_C(32), UINT8_C(91), UINT8_C(48), UINT8_C(91),
+      UINT8_C(64), UINT8_C(91), UINT8_C(80), UINT8_C(91), UINT8_C(96), UINT8_C(91), UINT8_C(112), UINT8_C(91),
+      UINT8_C(128), UINT8_C(91), UINT8_C(144), UINT8_C(91), UINT8_C(160), UINT8_C(91), UINT8_C(176), UINT8_C(91),
+      UINT8_C(192), UINT8_C(91), UINT8_C(208), UINT8_C(91), UINT8_C(224), UINT8_C(91), UINT8_C(240), UINT8_C(91)
+      } },
+  };
+  SIMDE_TEST_HVX_PAIR_TEST(simde_Q6_Whf_vcvt2_Vub);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+static int
+test_simde_vcvt_Whf_vcvt_V(SIMDE_MUNIT_TEST_ARGS) {
+#if 1
+  static const struct {
+    uint8_t a[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_lo[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+    uint8_t r_hi[SIMDE_TEST_HVX_FIXTURE_VECTOR_SIZE];
+  } test_vec[] = {
+    { {
+      UINT8_C(56), UINT8_C(184), UINT8_C(64), UINT8_C(192), UINT8_C(0), UINT8_C(128), UINT8_C(120), UINT8_C(248),
+      UINT8_C(127), UINT8_C(119), UINT8_C(1), UINT8_C(7), UINT8_C(8), UINT8_C(126), UINT8_C(48), UINT8_C(176),
+      UINT8_C(68), UINT8_C(196), UINT8_C(46), UINT8_C(80), UINT8_C(208), UINT8_C(56), UINT8_C(72), UINT8_C(200),
+      UINT8_C(52), UINT8_C(180), UINT8_C(44), UINT8_C(172), UINT8_C(96), UINT8_C(224), UINT8_C(16), UINT8_C(32),
+      UINT8_C(56), UINT8_C(184), UINT8_C(64), UINT8_C(192), UINT8_C(0), UINT8_C(128), UINT8_C(120), UINT8_C(248),
+      UINT8_C(127), UINT8_C(119), UINT8_C(1), UINT8_C(7), UINT8_C(8), UINT8_C(126), UINT8_C(48), UINT8_C(176),
+      UINT8_C(68), UINT8_C(196), UINT8_C(46), UINT8_C(80), UINT8_C(208), UINT8_C(56), UINT8_C(72), UINT8_C(200),
+      UINT8_C(52), UINT8_C(180), UINT8_C(44), UINT8_C(172), UINT8_C(96), UINT8_C(224), UINT8_C(16), UINT8_C(32),
+      UINT8_C(56), UINT8_C(184), UINT8_C(64), UINT8_C(192), UINT8_C(0), UINT8_C(128), UINT8_C(120), UINT8_C(248),
+      UINT8_C(127), UINT8_C(119), UINT8_C(1), UINT8_C(7), UINT8_C(8), UINT8_C(126), UINT8_C(48), UINT8_C(176),
+      UINT8_C(68), UINT8_C(196), UINT8_C(46), UINT8_C(80), UINT8_C(208), UINT8_C(56), UINT8_C(72), UINT8_C(200),
+      UINT8_C(52), UINT8_C(180), UINT8_C(44), UINT8_C(172), UINT8_C(96), UINT8_C(224), UINT8_C(16), UINT8_C(32),
+      UINT8_C(56), UINT8_C(184), UINT8_C(64), UINT8_C(192), UINT8_C(0), UINT8_C(128), UINT8_C(120), UINT8_C(248),
+      UINT8_C(127), UINT8_C(119), UINT8_C(1), UINT8_C(7), UINT8_C(8), UINT8_C(126), UINT8_C(48), UINT8_C(176),
+      UINT8_C(68), UINT8_C(196), UINT8_C(46), UINT8_C(80), UINT8_C(208), UINT8_C(56), UINT8_C(72), UINT8_C(200),
+      UINT8_C(52), UINT8_C(180), UINT8_C(44), UINT8_C(172), UINT8_C(96), UINT8_C(224), UINT8_C(16), UINT8_C(32)
+      },
+      {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(92), UINT8_C(0), UINT8_C(220),
+      UINT8_C(0), UINT8_C(126), UINT8_C(128), UINT8_C(91), UINT8_C(0), UINT8_C(24), UINT8_C(0), UINT8_C(35),
+      UINT8_C(0), UINT8_C(36), UINT8_C(0), UINT8_C(95), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(66), UINT8_C(0), UINT8_C(194), UINT8_C(0), UINT8_C(55), UINT8_C(0), UINT8_C(72),
+      UINT8_C(0), UINT8_C(200), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(68), UINT8_C(0), UINT8_C(196),
+      UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(54), UINT8_C(0), UINT8_C(182),
+      UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208), UINT8_C(0), UINT8_C(40), UINT8_C(0), UINT8_C(48),
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(92), UINT8_C(0), UINT8_C(220),
+      UINT8_C(0), UINT8_C(126), UINT8_C(128), UINT8_C(91), UINT8_C(0), UINT8_C(24), UINT8_C(0), UINT8_C(35),
+      UINT8_C(0), UINT8_C(36), UINT8_C(0), UINT8_C(95), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(66), UINT8_C(0), UINT8_C(194), UINT8_C(0), UINT8_C(55), UINT8_C(0), UINT8_C(72),
+      UINT8_C(0), UINT8_C(200), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(68), UINT8_C(0), UINT8_C(196),
+      UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(54), UINT8_C(0), UINT8_C(182),
+      UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208), UINT8_C(0), UINT8_C(40), UINT8_C(0), UINT8_C(48)
+      },
+      {
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(92), UINT8_C(0), UINT8_C(220),
+      UINT8_C(0), UINT8_C(126), UINT8_C(128), UINT8_C(91), UINT8_C(0), UINT8_C(24), UINT8_C(0), UINT8_C(35),
+      UINT8_C(0), UINT8_C(36), UINT8_C(0), UINT8_C(95), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(66), UINT8_C(0), UINT8_C(194), UINT8_C(0), UINT8_C(55), UINT8_C(0), UINT8_C(72),
+      UINT8_C(0), UINT8_C(200), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(68), UINT8_C(0), UINT8_C(196),
+      UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(54), UINT8_C(0), UINT8_C(182),
+      UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208), UINT8_C(0), UINT8_C(40), UINT8_C(0), UINT8_C(48),
+      UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(188), UINT8_C(0), UINT8_C(64), UINT8_C(0), UINT8_C(192),
+      UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(128), UINT8_C(0), UINT8_C(92), UINT8_C(0), UINT8_C(220),
+      UINT8_C(0), UINT8_C(126), UINT8_C(128), UINT8_C(91), UINT8_C(0), UINT8_C(24), UINT8_C(0), UINT8_C(35),
+      UINT8_C(0), UINT8_C(36), UINT8_C(0), UINT8_C(95), UINT8_C(0), UINT8_C(56), UINT8_C(0), UINT8_C(184),
+      UINT8_C(0), UINT8_C(66), UINT8_C(0), UINT8_C(194), UINT8_C(0), UINT8_C(55), UINT8_C(0), UINT8_C(72),
+      UINT8_C(0), UINT8_C(200), UINT8_C(0), UINT8_C(60), UINT8_C(0), UINT8_C(68), UINT8_C(0), UINT8_C(196),
+      UINT8_C(0), UINT8_C(58), UINT8_C(0), UINT8_C(186), UINT8_C(0), UINT8_C(54), UINT8_C(0), UINT8_C(182),
+      UINT8_C(0), UINT8_C(80), UINT8_C(0), UINT8_C(208), UINT8_C(0), UINT8_C(40), UINT8_C(0), UINT8_C(48)
+      } },
+  };
+  SIMDE_TEST_HVX_PAIR_TEST(simde_Q6_Whf_vcvt_V);
+
+  return 0;
+#else
+  fputc('\n', stdout);
+  return 1;
+#endif
+}
+
+SIMDE_TEST_FUNC_LIST_BEGIN
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vhf_vcvt_Vh)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vhf_vcvt_Vuh)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vh_vcvt_Vhf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vuh_vcvt_Vhf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vsf_equals_Vw)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vw_equals_Vsf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vh_equals_Vhf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vh_equals_Vhf_rnd)
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vh_equals_Vhf_rnd_modes)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vhf_equals_Vh)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vhf_vcvt_VsfVsf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vb_vcvt_VhfVhf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vub_vcvt_VhfVhf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vbf_vcvt_VsfVsf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vb_vcvt2_VhfVhf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Vub_vcvt2_VhfVhf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_V_vcvt_VhfVhf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Wsf_vcvt_Vhf)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Whf_vcvt_Vb)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Whf_vcvt_Vub)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Whf_vcvt2_Vb)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Whf_vcvt2_Vub)
+
+SIMDE_TEST_FUNC_LIST_ENTRY(vcvt_Whf_vcvt_V)
+
+SIMDE_TEST_FUNC_LIST_END
+
+
+
+#include "test-hvx-footer.h"

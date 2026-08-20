@@ -7,6 +7,8 @@ simde_test_hexagon_hvx_qemu_broken = []
 simde_test_hexagon_hvx_qemu_broken += ['vcmp']
 # QEMU does not model out-of-range gathers.
 simde_test_hexagon_hvx_qemu_broken += ['vgather']
+# QEMU cannot decode the conversion instructions.
+simde_test_hexagon_hvx_qemu_broken += ['vcvt']
 simde_test_hexagon_hvx_on_qemu = (host_machine.cpu_family() == 'hexagon')
 
 simde_test_hexagon_hvx_simd_sources = []
