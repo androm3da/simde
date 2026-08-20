@@ -678,6 +678,51 @@ jobs:
         # shellcheck disable=SC2046
         meson test -C build --print-errorlogs
 
+  hexagon-qemu:
+    runs-on: ubuntu-24.04
+    env:
+      # Prebuilt LLVM cross toolchain for Hexagon; bundles clang, the musl
+      # sysroot, and qemu-hexagon.
+      HEXAGON_TOOLCHAIN_VERSION: 22.1.8
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: recursive
+    - name: Install APT Dependencies
+      run: |
+        sudo add-apt-repository ppa:stephanosio/ccache
+        sudo apt-get -y --no-install-recommends install ccache ninja-build pipx zstd
+        pipx install meson
+    - name: Install Hexagon toolchain
+      run: |
+        base="https://artifacts.codelinaro.org/artifactory/codelinaro-toolchain-for-hexagon"
+        tarball="clang+llvm-${HEXAGON_TOOLCHAIN_VERSION}-cross-hexagon-unknown-linux-musl.tar.zst"
+        wget -q "${base}/${HEXAGON_TOOLCHAIN_VERSION}________/${tarball}"
+        tar --use-compress-program=unzstd -xf "${tarball}" -C /opt
+        toolchain="$(echo /opt/clang+llvm-"${HEXAGON_TOOLCHAIN_VERSION}"-cross-hexagon-unknown-linux-musl/*)"
+        echo "${toolchain}/bin" >> "$GITHUB_PATH"
+        echo "HEXAGON_SYSROOT=${toolchain}/target/hexagon-unknown-linux-musl" >> "$GITHUB_ENV"
+    - name: ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ github.job }}-${{ env.HEXAGON_TOOLCHAIN_VERSION }}
+        verbose: 2
+    - name: add ccache to the build path
+      run: |
+        export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+    - name: Configure
+      run: |
+        sed "s|/usr/hexagon-unknown-linux-musl|${HEXAGON_SYSROOT}|" \
+          docker/cross-files/hexagon-clang-ccache.cross > /tmp/hexagon.cross
+        meson setup --cross-file=/tmp/hexagon.cross build \
+          || (cat build/meson-logs/meson-log.txt ; false)
+    - name: Build
+      run: ninja -C build -v
+    - name: Test
+      run: |
+        # shellcheck disable=SC2046
+        meson test -C build --print-errorlogs
+
   clang:
     strategy:
       fail-fast: false

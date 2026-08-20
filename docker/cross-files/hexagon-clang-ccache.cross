@@ -1,0 +1,17 @@
+[binaries]
+c = ['ccache', 'hexagon-unknown-linux-musl-clang']
+cpp = ['ccache', 'hexagon-unknown-linux-musl-clang++']
+ar = 'llvm-ar'
+strip = 'llvm-strip'
+objcopy = 'llvm-objcopy'
+exe_wrapper = ['qemu-hexagon', '-cpu', 'v73', '-L', '/usr/hexagon-unknown-linux-musl']
+
+[built-in options]
+c_args   = ['-mv73', '-mhvx', '-mhvx-length=128b', '-Wextra', '-Werror', '-Wno-unsafe-buffer-usage']
+cpp_args = ['-mv73', '-mhvx', '-mhvx-length=128b', '-Wextra', '-Werror', '-Wno-unsafe-buffer-usage']
+
+[host_machine]
+system = 'linux'
+cpu_family = 'hexagon'
+cpu = 'hexagon'
+endian = 'little'
