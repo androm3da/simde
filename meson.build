@@ -464,6 +464,7 @@ simde_hvx_families = [
   'vcombine',
   'vcondacc',
   'vcondnac',
+  'vcvt',
   'vdelta',
   'vdmpy',
   'vdsad',

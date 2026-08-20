@@ -42,6 +42,7 @@
 #include "hvx/vcombine.h"
 #include "hvx/vcondacc.h"
 #include "hvx/vcondnac.h"
+#include "hvx/vcvt.h"
 #include "hvx/vdelta.h"
 #include "hvx/vdmpy.h"
 #include "hvx/vdsad.h"
