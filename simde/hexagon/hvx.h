@@ -38,6 +38,7 @@
 #include "hvx/vasr.h"
 #include "hvx/vavg.h"
 #include "hvx/vcl0.h"
+#include "hvx/vcmp.h"
 #include "hvx/vcombine.h"
 #include "hvx/vcondacc.h"
 #include "hvx/vcondnac.h"
