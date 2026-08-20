@@ -469,6 +469,7 @@ simde_hvx_families = [
   'vdsad',
   'vextract',
   'vfloat',
+  'vgather',
   'vilog2',
   'vinsert',
   'vlalign',

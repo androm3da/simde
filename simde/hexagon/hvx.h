@@ -47,6 +47,7 @@
 #include "hvx/vdsad.h"
 #include "hvx/vextract.h"
 #include "hvx/vfloat.h"
+#include "hvx/vgather.h"
 #include "hvx/vilog2.h"
 #include "hvx/vinsert.h"
 #include "hvx/vlalign.h"
