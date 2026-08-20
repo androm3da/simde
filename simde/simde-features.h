@@ -547,6 +547,16 @@
   #include <msa.h>
 #endif
 
+#if !defined(SIMDE_HEXAGON_HVX_NATIVE) && !defined(SIMDE_HEXAGON_HVX_NO_NATIVE) && !defined(SIMDE_NO_NATIVE)
+  #if defined(SIMDE_ARCH_HEXAGON_HVX)
+    #define SIMDE_HEXAGON_HVX_NATIVE
+  #endif
+#endif
+#if defined(SIMDE_HEXAGON_HVX_NATIVE)
+  #include <hvx_hexagon_protos.h>
+  #include <hexagon_types.h>
+#endif
+
 /* This is used to determine whether or not to fall back on a vector
  * function in an earlier ISA extensions, as well as whether
  * we expected any attempts at vectorization to be fruitful or if we
@@ -579,6 +589,8 @@
     #define SIMDE_NATURAL_FLOAT_VECTOR_SIZE (128)
     #define SIMDE_NATURAL_INT_VECTOR_SIZE (64)
     #define SIMDE_NATURAL_DOUBLE_VECTOR_SIZE (0)
+  #elif defined(SIMDE_HEXAGON_HVX_NATIVE) && defined(SIMDE_ARCH_HEXAGON_HVX_LENGTH)
+    #define SIMDE_NATURAL_VECTOR_SIZE (SIMDE_ARCH_HEXAGON_HVX_LENGTH * 8)
   #elif defined(SIMDE_RISCV_V_NATIVE) && defined(__riscv_v_fixed_vlen)
         //FIXME : SIMDE_NATURAL_VECTOR_SIZE == __riscv_v_fixed_vlen
         #define SIMDE_NATURAL_VECTOR_SIZE (128)
@@ -739,6 +751,10 @@
 
   #if !defined(SIMDE_WASM_SIMD128_NATIVE)
     #define SIMDE_WASM_SIMD128_ENABLE_NATIVE_ALIASES
+  #endif
+
+  #if !defined(SIMDE_HEXAGON_HVX_NATIVE)
+    #define SIMDE_HEXAGON_HVX_ENABLE_NATIVE_ALIASES
   #endif
 #endif
 
