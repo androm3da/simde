@@ -31,10 +31,12 @@
 
 #include "hvx/vadd.h"
 #include "hvx/vand.h"
+#include "hvx/vcombine.h"
 #include "hvx/vmux.h"
 #include "hvx/vnot.h"
 #include "hvx/vor.h"
 #include "hvx/vpred.h"
+#include "hvx/vsplat.h"
 #include "hvx/vsub.h"
 #include "hvx/vxor.h"
 

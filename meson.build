@@ -453,10 +453,12 @@ simde_msa_families = [
 simde_hvx_families = [
   'vadd',
   'vand',
+  'vcombine',
   'vmux',
   'vnot',
   'vor',
   'vpred',
+  'vsplat',
   'vsub',
   'vxor',
 ]
