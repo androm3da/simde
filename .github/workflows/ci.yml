@@ -705,6 +705,56 @@ jobs:
         # shellcheck disable=SC2046
         meson test -C build --print-errorlogs
 
+  hexagon-qemu:
+    runs-on: ubuntu-26.04
+    env:
+      # Prebuilt LLVM cross toolchain for Hexagon; bundles clang, the musl
+      # sysroot, and qemu-hexagon.
+      HEXAGON_TOOLCHAIN_VERSION: 22.1.8
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        submodules: recursive
+        persist-credentials: false
+    - name: Install APT Dependencies
+      run: |
+        sudo add-apt-repository ppa:ccache-backports/ccache-backports-ppa
+        sudo apt-get -y --no-install-recommends install ccache ninja-build pipx zstd
+        pipx install meson==1.3.2
+    - name: Install Hexagon toolchain
+      run: |
+        base="https://artifacts.codelinaro.org/artifactory/codelinaro-toolchain-for-hexagon"
+        tarball="clang+llvm-${HEXAGON_TOOLCHAIN_VERSION}-cross-hexagon-unknown-linux-musl.tar.zst"
+        # The artifactory layout pads the version directory out to 16 characters.
+        wget -q "${base}/${HEXAGON_TOOLCHAIN_VERSION}________/${tarball}"
+        tar --use-compress-program=unzstd -xf "${tarball}" -C /opt
+        toolchain="$(echo /opt/clang+llvm-"${HEXAGON_TOOLCHAIN_VERSION}"-cross-hexagon-unknown-linux-musl/*)"
+        echo "${toolchain}/bin" >> "$GITHUB_PATH"
+        # The cross file names the sysroot at a fixed path, the way the
+        # distro-packaged cross toolchains do.
+        sudo ln -s "${toolchain}/target/hexagon-unknown-linux-musl" /usr/hexagon-unknown-linux-musl
+    - name: ccache
+      uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
+      with:
+        key: ${{ github.job }}-${{ env.HEXAGON_TOOLCHAIN_VERSION }}
+        verbose: 2
+    - name: add ccache to the build path
+      run: |
+        export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+    - name: Configure
+      run: |
+        meson setup --cross-file=docker/cross-files/hexagon-clang-ccache.cross build \
+          || (cat build/meson-logs/meson-log.txt ; false)
+    - name: Build
+      run: ninja -C build -v
+    - name: Test
+      run: |
+        # Only the HVX suite.  The rest of the test suite cross-compiles for
+        # Hexagon but a handful of the AVX-512 float tests (scalef, roundscale,
+        # cmp, dbsad, dpbf16) disagree with the reference data on NaN and
+        # infinity here; that predates this target and is not what this job is
+        # for.
+        meson test -C build --suite hexagon --print-errorlogs
   clang:
     strategy:
       fail-fast: false

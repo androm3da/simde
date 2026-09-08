@@ -91,7 +91,7 @@ set extensions:
 * WebAssembly
   * [SIMD128](https://github.com/WebAssembly/simd)
 
-As well as partial support for many others, including AES-ni, [CLMUL](https://en.wikipedia.org/wiki/CLMUL_instruction_set), SSE4.2, SVE, [MSA](https://en.wikipedia.org/wiki/MIPS_architecture#Application-specific_extensions) in
+As well as partial support for many others, including AES-ni, [CLMUL](https://en.wikipedia.org/wiki/CLMUL_instruction_set), SSE4.2, SVE, [MSA](https://en.wikipedia.org/wiki/MIPS_architecture#Application-specific_extensions), [Hexagon HVX](https://docs.qualcomm.com/bundle/publicresource/topics/80-N2040-60/introduction.html) in
 addition to several AVX-512 extensions.  See the
 [instruction-set-support](https://github.com/simd-everywhere/simde/issues?q=is%3Aissue+is%3Aopen+label%3Ainstruction-set-support+sort%3Aupdated-desc)
 label in the issue tracker for details on progress.  If you'd like to
@@ -287,6 +287,7 @@ The following architectures are tested in CI for every commit:
  * RISC-V 64
  * emscripten 32- & 64-bit; regular and relaxed
  * LoongArch64
+ * Hexagon (HVX, 128-byte vectors)
 
 We would love to add more, so patches are extremely welcome!
 

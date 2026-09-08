@@ -1,0 +1,23 @@
+[binaries]
+c = ['ccache', 'hexagon-unknown-linux-musl-clang']
+cpp = ['ccache', 'hexagon-unknown-linux-musl-clang++']
+ar = 'llvm-ar'
+strip = 'llvm-strip'
+objcopy = 'llvm-objcopy'
+exe_wrapper = ['qemu-hexagon', '-cpu', 'v73', '-L', '/usr/hexagon-unknown-linux-musl']
+
+[built-in options]
+# -Wno-unsafe-buffer-usage: clang flags every pointer index in the munit
+#   test runner; SIMDe suppresses it on the other clang cross builds too.
+# -Wno-pass-failed: with -DSIMDE_NO_NATIVE the SIMDE_VECTORIZE loops over a
+#   128-byte vector have no vector unit to target, and clang reports the
+#   failed transformation.  Not specific to Hexagon; the same warning fires
+#   on the existing x86 and NEON tests built with clang -Werror.
+c_args   = ['-mv73', '-mhvx', '-mhvx-length=128b', '-Wextra', '-Werror', '-Wno-unsafe-buffer-usage', '-Wno-pass-failed']
+cpp_args = ['-mv73', '-mhvx', '-mhvx-length=128b', '-Wextra', '-Werror', '-Wno-unsafe-buffer-usage', '-Wno-pass-failed']
+
+[host_machine]
+system = 'linux'
+cpu_family = 'hexagon'
+cpu = 'hexagon'
+endian = 'little'

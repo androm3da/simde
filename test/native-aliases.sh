@@ -70,6 +70,10 @@ perl -p -i -e 's/([^a-zA-Z0-9_])simde_float64x/$1float64x/g' $(ls arm/neon/*.{c,
 
 perl -p -i -e 's/([^a-zA-Z0-9_])simde_sv/$1sv/g' arm/sve/*.{c,h}
 
+# Hexagon HVX
+
+perl -p -i -e 's/([^a-zA-Z0-9_])simde_Q6_/$1Q6_/g' hexagon/hvx/*.{c,h}
+
 # WASM SIMD128
 
 perl -p -i -e 's/([^a-zA-Z0-9_])simde_wasm_/$1wasm_/g' wasm/simd128/*.{c,h}
