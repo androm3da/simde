@@ -29,4 +29,7 @@
 
 #include "hvx/types.h"
 
+#include "hvx/vadd.h"
+#include "hvx/vsub.h"
+
 #endif /* SIMDE_HEXAGON_HVX_H */

@@ -451,6 +451,8 @@ simde_msa_families = [
 ]
 
 simde_hvx_families = [
+  'vadd',
+  'vsub',
 ]
 
 if not meson.is_subproject() and get_option('tests')
