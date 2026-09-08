@@ -450,6 +450,9 @@ simde_msa_families = [
   'subv',
 ]
 
+simde_hvx_families = [
+]
+
 if not meson.is_subproject() and get_option('tests')
   subdir('test')
 endif
@@ -472,6 +475,11 @@ endforeach
 simde_msa_family_headers = ['simde/mips/msa/types.h']
 foreach msa_family : simde_msa_families
   simde_msa_family_headers += 'simde/mips/msa/' + msa_family + '.h'
+endforeach
+
+simde_hvx_family_headers = ['simde/hexagon/hvx/types.h']
+foreach hvx_family : simde_hvx_families
+  simde_hvx_family_headers += 'simde/hexagon/hvx/' + hvx_family + '.h'
 endforeach
 
 if not meson.is_subproject()
@@ -553,6 +561,16 @@ if not meson.is_subproject()
   install_headers(
     files(simde_msa_family_headers),
     subdir: 'simde/mips/msa')
+
+  install_headers(
+    files([
+      'simde/hexagon/hvx.h',
+      ]),
+    subdir: 'simde/hexagon')
+
+  install_headers(
+    files(simde_hvx_family_headers),
+    subdir: 'simde/hexagon/hvx')
 
   import('pkgconfig').generate(
     version : meson.project_version(),

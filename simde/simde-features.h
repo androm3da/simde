@@ -547,6 +547,16 @@
   #include <msa.h>
 #endif
 
+#if !defined(SIMDE_HEXAGON_HVX_NATIVE) && !defined(SIMDE_HEXAGON_HVX_NO_NATIVE) && !defined(SIMDE_NO_NATIVE)
+  #if defined(SIMDE_ARCH_HEXAGON_HVX)
+    #define SIMDE_HEXAGON_HVX_NATIVE
+  #endif
+#endif
+#if defined(SIMDE_HEXAGON_HVX_NATIVE)
+  #include <hexagon_types.h>
+  #include <hvx_hexagon_protos.h>
+#endif
+
 /* This is used to determine whether or not to fall back on a vector
  * function in an earlier ISA extensions, as well as whether
  * we expected any attempts at vectorization to be fruitful or if we
@@ -739,6 +749,10 @@
 
   #if !defined(SIMDE_WASM_SIMD128_NATIVE)
     #define SIMDE_WASM_SIMD128_ENABLE_NATIVE_ALIASES
+  #endif
+
+  #if !defined(SIMDE_HEXAGON_HVX_NATIVE)
+    #define SIMDE_HEXAGON_HVX_ENABLE_NATIVE_ALIASES
   #endif
 #endif
 

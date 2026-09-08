@@ -699,4 +699,39 @@
 #  define SIMDE_ARCH_LOONGARCH_LASX 2
 #endif
 
+/* Hexagon
+   <https://en.wikipedia.org/wiki/Qualcomm_Hexagon> */
+#if defined(__hexagon__)
+#  if defined(__HEXAGON_ARCH__)
+#    define SIMDE_ARCH_HEXAGON __HEXAGON_ARCH__
+#  else
+#    define SIMDE_ARCH_HEXAGON 1
+#  endif
+#endif
+#if defined(SIMDE_ARCH_HEXAGON)
+#  define SIMDE_ARCH_HEXAGON_CHECK(version) ((version) <= SIMDE_ARCH_HEXAGON)
+#else
+#  define SIMDE_ARCH_HEXAGON_CHECK(version) (0)
+#endif
+
+/* Hexagon HVX SIMD extension.  __HVX_ARCH__ is the HVX version, which
+   tracks the Hexagon version it was introduced with (68, 73, 79, ...). */
+#if defined(__HVX__)
+#  if defined(__HVX_ARCH__)
+#    define SIMDE_ARCH_HEXAGON_HVX __HVX_ARCH__
+#  else
+#    define SIMDE_ARCH_HEXAGON_HVX 1
+#  endif
+#endif
+#if defined(SIMDE_ARCH_HEXAGON_HVX)
+#  define SIMDE_ARCH_HEXAGON_HVX_CHECK(version) ((version) <= SIMDE_ARCH_HEXAGON_HVX)
+#else
+#  define SIMDE_ARCH_HEXAGON_HVX_CHECK(version) (0)
+#endif
+
+/* HVX vector length (64 or 128 bytes) */
+#if defined(__HVX_LENGTH__)
+#  define SIMDE_ARCH_HEXAGON_HVX_LENGTH __HVX_LENGTH__
+#endif
+
 #endif /* !defined(SIMDE_ARCH_H) */
