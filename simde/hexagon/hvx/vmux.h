@@ -24,18 +24,41 @@
  *   2026      Brian Cain <brian.cain@oss.qualcomm.com> (Copyright owned by Qualcomm Technologies, Inc. and its subsidiaries)
  */
 
-#if !defined(SIMDE_HEXAGON_HVX_H)
-#define SIMDE_HEXAGON_HVX_H
+#if !defined(SIMDE_HEXAGON_HVX_VMUX_H)
+#define SIMDE_HEXAGON_HVX_VMUX_H
 
-#include "hvx/types.h"
+#include "types.h"
 
-#include "hvx/vadd.h"
-#include "hvx/vand.h"
-#include "hvx/vmux.h"
-#include "hvx/vnot.h"
-#include "hvx/vor.h"
-#include "hvx/vpred.h"
-#include "hvx/vsub.h"
-#include "hvx/vxor.h"
+HEDLEY_DIAGNOSTIC_PUSH
+SIMDE_DISABLE_UNWANTED_DIAGNOSTICS
+SIMDE_BEGIN_DECLS_
 
-#endif /* SIMDE_HEXAGON_HVX_H */
+SIMDE_FUNCTION_ATTRIBUTES
+simde_hvx_vector_t
+simde_Q6_V_vmux_QVV(simde_hvx_vectorpred_t Qt, simde_hvx_vector_t Vu, simde_hvx_vector_t Vv) {
+  #if defined(SIMDE_HEXAGON_HVX_NATIVE)
+    return Q6_V_vmux_QVV(Qt, Vu, Vv);
+  #else
+    simde_hvx_vectorpred_private q_ = simde_hvx_vectorpred_to_private(Qt);
+    simde_hvx_vector_private
+      r_,
+      a_ = simde_hvx_vector_to_private(Vu),
+      b_ = simde_hvx_vector_to_private(Vv);
+
+    SIMDE_VECTORIZE
+    for (size_t i = 0 ; i < SIMDE_HVX_VECTOR_SIZE ; i++) {
+      r_.u8[i] = (q_.u8[i] & a_.u8[i]) | (HEDLEY_STATIC_CAST(uint8_t, ~q_.u8[i]) & b_.u8[i]);
+    }
+
+    return simde_hvx_vector_from_private(r_);
+  #endif
+}
+#if defined(SIMDE_HEXAGON_HVX_ENABLE_NATIVE_ALIASES)
+  #undef Q6_V_vmux_QVV
+  #define Q6_V_vmux_QVV(Qt, Vu, Vv) simde_Q6_V_vmux_QVV((Qt), (Vu), (Vv))
+#endif
+
+SIMDE_END_DECLS_
+HEDLEY_DIAGNOSTIC_POP
+
+#endif /* !defined(SIMDE_HEXAGON_HVX_VMUX_H) */
